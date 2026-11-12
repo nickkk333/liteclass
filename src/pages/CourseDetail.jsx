@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Heart, Settings2, Play, Pause, SkipBack, SkipForward, SquarePlay,
-  Volume2, VolumeX, Repeat, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
+  Volume2, VolumeX, Repeat1, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
   Music, FileText, Video, Trash2, Send, Clock, Download, Pencil, CornerDownRight,
-  PanelRight, X,
+  PanelRight, X, ListMusic, PauseCircle, CheckCircle2,
 } from "lucide-react";
 import { api, fmtDuration, fmtDateTime, streamUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -16,6 +16,13 @@ const TABS = [
   ["files", "资料", FolderOpen],
   ["chat", "讨论", MessageCircle],
 ];
+
+const PLAY_MODES = [
+  ["sequence", "顺序播放", ListMusic],
+  ["loop", "单曲循环", Repeat1],
+  ["single", "播完暂停", PauseCircle],
+];
+const PLAY_MODE_KEY = "liteclass.playMode";
 
 function FileIcon({ type, size = 16 }) {
   if (type === "video") return <Video size={size} />;
@@ -38,7 +45,10 @@ export default function CourseDetail() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
-  const [loop, setLoop] = useState(false);
+  const [mode, setMode] = useState(() => {
+    const saved = localStorage.getItem(PLAY_MODE_KEY);
+    return PLAY_MODES.some(([key]) => key === saved) ? saved : "sequence";
+  });
   const [notes, setNotes] = useState([]);
   const [discussions, setDiscussions] = useState([]);
   const [noteText, setNoteText] = useState("");
@@ -55,6 +65,7 @@ export default function CourseDetail() {
 
   const current = useMemo(() => course?.materials?.find((m) => m.id === currentId) || null, [course, currentId]);
   const currentIndex = useMemo(() => course?.materials?.findIndex((m) => m.id === currentId) ?? -1, [course, currentId]);
+  const ModeIcon = PLAY_MODES.find(([key]) => key === mode)?.[2] || ListMusic;
 
   const load = async () => {
     const c = await api(`/courses/${id}`);
@@ -125,7 +136,7 @@ export default function CourseDetail() {
     if (resume) el.currentTime = resume;
     el.volume = volume;
     el.playbackRate = rate;
-    el.loop = loop;
+    el.loop = false;
     if (stateRef.current.playing) el.play().catch(() => setPlaying(false));
   };
 
@@ -145,6 +156,36 @@ export default function CourseDetail() {
 
   const prev = () => { if (currentIndex > 0) selectMaterial(course.materials[currentIndex - 1]); };
   const next = () => { if (currentIndex < course.materials.length - 1) selectMaterial(course.materials[currentIndex + 1]); };
+
+  const cycleMode = () => {
+    const idx = PLAY_MODES.findIndex(([key]) => key === mode);
+    const [value, label] = PLAY_MODES[(idx + 1) % PLAY_MODES.length];
+    setMode(value);
+    localStorage.setItem(PLAY_MODE_KEY, value);
+    if (audioRef.current) audioRef.current.loop = false;
+    toast(label, "ok");
+  };
+
+  // 播放结束：记录完成，并按当前播放模式续播 / 重播 / 停止
+  const handleEnded = (el) => {
+    setPlaying(false);
+    lastReport.current = 0;
+    if (!current) return;
+    const total = Number(el?.duration) || Number(current.duration) || 0;
+    report(current.id, total, total);
+
+    if (mode === "loop") {
+      if (el) {
+        el.currentTime = 0;
+        el.play().catch(() => setPlaying(false));
+      }
+      setPlaying(true);
+      return;
+    }
+    if (mode === "sequence" && currentIndex >= 0 && currentIndex < course.materials.length - 1) {
+      next();
+    }
+  };
 
   const cycleRate = () => {
     const rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -263,7 +304,7 @@ export default function CourseDetail() {
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
-                  onEnded={(e) => { setPlaying(false); if (current) report(current.id, e.currentTarget.duration, e.currentTarget.duration); }}
+                  onEnded={(e) => handleEnded(e.currentTarget)}
                 />
               </div>
             ) : (
@@ -324,7 +365,13 @@ export default function CourseDetail() {
                     const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; if (v > 0 && muted) { setMuted(false); if (audioRef.current) audioRef.current.muted = false; }
                   }} />
                   <button className="rate-btn" onClick={cycleRate}>{rate}x</button>
-                  <button className="icon-btn" onClick={() => { setLoop((l) => !l); if (audioRef.current) audioRef.current.loop = !loop; }} style={{ color: loop ? "var(--primary)" : undefined }}><Repeat size={15} /></button>
+                  <button
+                    className={`icon-btn ${mode !== "sequence" ? "primary" : ""}`}
+                    onClick={cycleMode}
+                    title={`播放模式：${PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放"}`}
+                  >
+                    <ModeIcon size={15} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -339,7 +386,7 @@ export default function CourseDetail() {
                 const el = audioRef.current;
                 if (el && current) report(current.id, el.currentTime, el.duration || 0);
               }}
-              onEnded={() => { setPlaying(false); if (current) report(current.id, current.duration, current.duration); next(); }}
+              onEnded={() => handleEnded(audioRef.current)}
             />
           </div>
 
@@ -364,10 +411,11 @@ export default function CourseDetail() {
                         <div className="m">
                           时长 {Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}
                           {m.position > 0 ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
-                          {m.completed ? " · 已完成" : ""}
                         </div>
                       </div>
-                      <span className="kind">{String(idx + 1).padStart(3, "0")}</span>
+                      {m.completed
+                        ? <CheckCircle2 size={17} color="var(--success)" title="已完成" />
+                        : <span className="kind">{String(idx + 1).padStart(3, "0")}</span>}
                     </div>
                   ))
               )}
