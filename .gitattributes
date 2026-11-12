@@ -1,0 +1,9 @@
+# 生命周期脚本与 manifest 必须是 LF，否则在 Windows 上克隆后打包会导致 bash 报错
+* text=auto
+fnos/package/cmd/* text eol=lf
+fnos/package/manifest text eol=lf
+fnos/build.mjs text eol=lf
+
+*.png binary
+*.PNG binary
+*.fpk binary
