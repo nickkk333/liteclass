@@ -1,0 +1,17 @@
+appname               = liteclass
+version               = 1.0.0
+display_name          = 轻课堂
+desc                  = 轻课堂 Lite Class 是一个轻量在线学习平台，支持课程管理、音视频播放、学习进度、笔记、资料下载、讨论、在线考试、一起看与观看排行榜。
+platform              = x86
+source                = thirdparty
+maintainer            = nickkk333
+maintainer_url        = https://github.com/nickkk333/liteclass
+distributor           = nickkk333
+distributor_url       = https://github.com/nickkk333/liteclass
+os_min_version        = 0.9.27
+desktop_uidir         = ui
+desktop_applaunchname = liteclass.main
+ctl_stop              = true
+service_port          = 3000
+checkport             = true
+changelog             = 首个版本：课程与章节管理、音视频播放与进度记忆、笔记、资料、讨论、考试、一起看、排行榜，以及 NAS 挂载课程目录。

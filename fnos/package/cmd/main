@@ -1,0 +1,102 @@
+#!/bin/bash
+
+APP_DIR="${TRIM_APPDEST}"
+DATA_DIR="${TRIM_PKGVAR}/data"
+PID_FILE="${TRIM_PKGVAR}/liteclass.pid"
+LOG_FILE="${TRIM_PKGVAR}/liteclass.log"
+NODE_BIN="${APP_DIR}/runtime/bin/node"
+
+export LITECLASS_DATA_DIR="${DATA_DIR}"
+export PORT="${TRIM_SERVICE_PORT:-3000}"
+export LITECLASS_MOUNT_ROOTS="${LITECLASS_MOUNT_ROOTS:-/vol1:/vol2:/vol3:/vol4:/vol5:/vol6:/vol7:/vol8:/vol9}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+check_process() {
+    local pid=$1
+    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    return 1
+}
+
+start_process() {
+    if status; then
+        return 0
+    fi
+
+    mkdir -p "${DATA_DIR}"
+    chmod +x "${NODE_BIN}" 2>/dev/null
+
+    if [ ! -f "${DATA_DIR}/liteclass.db" ]; then
+        log_msg "First start, seeding demo data ..."
+        ( cd "${APP_DIR}" && "${NODE_BIN}" server/seed.js ) >> "${LOG_FILE}" 2>&1
+    fi
+
+    log_msg "Starting Lite Class on port ${PORT} ..."
+    cd "${APP_DIR}" || return 1
+    nohup "${NODE_BIN}" server/index.js >> "${LOG_FILE}" 2>&1 &
+    echo $! > "${PID_FILE}"
+
+    sleep 1
+    if status; then
+        log_msg "Lite Class started, pid $(cat "${PID_FILE}")"
+        return 0
+    fi
+
+    log_msg "Lite Class failed to start, check ${LOG_FILE}"
+    return 1
+}
+
+stop_process() {
+    if [ ! -r "${PID_FILE}" ]; then
+        return 0
+    fi
+
+    local pid
+    pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+    if check_process "${pid}"; then
+        log_msg "Stopping Lite Class, pid ${pid} ..."
+        kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1
+        local count=0
+        while check_process "${pid}" && [ $count -lt 15 ]; do
+            sleep 1
+            count=$((count + 1))
+        done
+        if check_process "${pid}"; then
+            kill -KILL "${pid}" >> "${LOG_FILE}" 2>&1
+        fi
+    fi
+    rm -f "${PID_FILE}"
+    return 0
+}
+
+case "$1" in
+    start)
+        start_process
+        ;;
+    stop)
+        stop_process
+        ;;
+    status)
+        if status; then
+            exit 0
+        else
+            exit 3
+        fi
+        ;;
+    *)
+        exit 1
+        ;;
+esac

@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "node server/index.js",
     "seed": "node server/seed.js",
-    "seed:force": "node server/seed.js --force"
+    "seed:force": "node server/seed.js --force",
+    "fpk": "node fnos/build.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

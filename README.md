@@ -55,6 +55,51 @@ npm run seed:force
 
 会清空并重新生成用户、课程、考试、房间、设置等全部数据（包括上传记录与观看统计）。
 
+## 飞牛 fnOS 安装包（.fpk）
+
+仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
+
+```
+release/liteclass_1.0.0_x86.fpk
+```
+
+### 安装
+
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.0_x86.fpk`；
+2. 或在 NAS 上执行：
+
+   ```bash
+   appcenter-cli install-fpk liteclass_1.0.0_x86.fpk
+   ```
+
+3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:3000`（端口可在应用设置中修改）。
+
+首次启动会自动初始化数据库并生成演示课程、音频与封面，账号与本地部署一致：`admin / admin333`、`student / 123456`。
+
+### 数据目录
+
+| 内容 | 路径 |
+| --- | --- |
+| 数据库 | `$TRIM_PKGVAR/data/liteclass.db` |
+| 上传文件 | `$TRIM_PKGVAR/data/uploads/` |
+| 合成音频与封面 | `$TRIM_PKGVAR/data/media/` |
+| 运行日志 | `$TRIM_PKGVAR/liteclass.log` |
+
+实际路径形如 `/var/apps/liteclass/var/data`，备份该目录即可保留全部数据。应用以 `package` 用户运行，数据目录由 `LITECLASS_DATA_DIR` 环境变量指定。
+
+### 读取 NAS 上的课程目录
+
+挂载路径模式需要读取 `/vol1` ~ `/vol9`。fnOS 默认不允许应用用户访问存储空间，请先在「应用中心 → 轻课堂 → 设置 → 授权目录」中添加对应目录（例如 `/vol1/1000/Media`），否则浏览/扫描挂载课程会提示无权限。
+
+### 重新打包
+
+```bash
+# 首次需要下载 Node 运行时到 fnos/.cache/（或由脚本提示手动下载）
+node fnos/build.mjs
+```
+
+脚本会构建前端、安装生产依赖、注入 Linux x64 Node 运行时，并输出 `release/liteclass_<version>_<platform>.fpk`。安装包结构：外层 tar.gz 包含 `manifest`、`app.tgz`、`cmd/`、`config/`、`wizard/` 与图标；`app.tgz` 解压后即应用运行目录。`manifest` 中的 `checksum` 由 `app.tgz` 的 MD5 自动写入。
+
 ## 目录结构
 
 ```
@@ -72,6 +117,8 @@ src/
   styles.css        设计系统与响应式布局
 data/               运行时生成：liteclass.db、uploads/、media/
 dist/               前端构建产物（由 Express 托管）
+fnos/               飞牛 fnOS 安装包工程（package/ 模板 + build.mjs 打包脚本）
+release/            打包产物（.fpk，已加入 .gitignore）
 ```
 
 ## 配置
@@ -81,6 +128,7 @@ dist/               前端构建产物（由 Express 托管）
 | `PORT` | `3000` | 服务端口 |
 | `LITECLASS_SECRET` | 内置开发密钥 | JWT 签名密钥，生产环境请务必修改 |
 | `LITECLASS_MOUNT_ROOTS` | 自动探测 | 允许挂载/浏览的根目录，多个用分隔符隔开（Windows 用 `;`，Linux/macOS 用 `:`） |
+| `LITECLASS_DATA_DIR` | 项目内 `data/` | 数据目录覆盖；fpk 安装包会把它指向 `$TRIM_PKGVAR/data` |
 
 ### 挂载 NAS 课程目录
 

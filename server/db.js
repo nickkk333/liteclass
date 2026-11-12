@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(__dirname, "..");
-export const DATA_DIR = path.join(ROOT, "data");
+export const DATA_DIR = process.env.LITECLASS_DATA_DIR
+  ? path.resolve(process.env.LITECLASS_DATA_DIR)
+  : path.join(ROOT, "data");
 export const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 export const MEDIA_DIR = path.join(DATA_DIR, "media");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });

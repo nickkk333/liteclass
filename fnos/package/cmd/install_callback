@@ -1,0 +1,4 @@
+#!/bin/bash
+# 确保内置 Node 运行时具有执行权限
+chmod +x "${TRIM_APPDEST}/runtime/bin/node" 2>/dev/null
+exit 0

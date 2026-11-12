@@ -1,0 +1,12 @@
+#!/bin/bash
+# 卸载前停止服务
+APP_ROOT="/var/apps/${TRIM_APPNAME}"
+if [ -x "${APP_ROOT}/cmd/main" ]; then
+    "${APP_ROOT}/cmd/main" stop >/dev/null 2>&1
+fi
+if [ -f "${TRIM_PKGVAR}/liteclass.pid" ]; then
+    pid=$(head -n 1 "${TRIM_PKGVAR}/liteclass.pid" | tr -d '[:space:]')
+    [ -n "${pid}" ] && kill -TERM "${pid}" 2>/dev/null
+    rm -f "${TRIM_PKGVAR}/liteclass.pid"
+fi
+exit 0

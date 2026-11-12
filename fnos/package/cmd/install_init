@@ -1,0 +1,7 @@
+#!/bin/bash
+# 安装前检查：当前仅提供 x86_64 安装包
+if [ -n "${TRIM_SYS_ARCH}" ] && [ "${TRIM_SYS_ARCH}" != "x86_64" ] && [ "${TRIM_SYS_ARCH}" != "amd64" ] && [ "${TRIM_SYS_ARCH}" != "x86" ]; then
+    echo "轻课堂当前仅提供 x86_64 安装包（当前架构：${TRIM_SYS_ARCH}）" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+fi
+exit 0

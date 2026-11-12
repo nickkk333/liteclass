@@ -11,6 +11,11 @@ data/
 # local reference material (original site assets used during development)
 _ref/
 
+# fnOS fpk build cache / output
+fnos/.cache/
+fnos/.build/
+release/
+
 # OS / editor
 .DS_Store
 Thumbs.db
