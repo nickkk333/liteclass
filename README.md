@@ -60,16 +60,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.0_x86.fpk
+release/liteclass_1.0.1_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.0_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.1_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.0_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.1_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:3000`（端口可在应用设置中修改）。
@@ -89,7 +89,13 @@ release/liteclass_1.0.0_x86.fpk
 
 ### 读取 NAS 上的课程目录
 
-挂载路径模式需要读取 `/vol1` ~ `/vol9`。fnOS 默认不允许应用用户访问存储空间，请先在「应用中心 → 轻课堂 → 设置 → 授权目录」中添加对应目录（例如 `/vol1/1000/Media`），否则浏览/扫描挂载课程会提示无权限。
+挂载路径模式需要读取 `/vol1` ~ `/vol9`。fnOS 默认不允许应用用户访问存储空间，请先在「应用中心 → 轻课堂 → 设置 → 授权目录」中添加对应目录（例如 `/vol1/1000/Media`）。
+
+应用启动时会读取 fnOS 提供的 `TRIM_DATA_ACCESSIBLE_PATHS`，并把授权目录持久化到 `$TRIM_PKGVAR/data/mount-roots.txt`；授权变更后（`cmd/config_init` / `cmd/config_callback`）无需重启应用即可生效。因此：
+
+- 「挂载路径 → 选择」弹窗顶部会列出 **已授权目录**，点击即可直接进入，不必从 `/vol1` 逐级向下浏览；
+- 未授权的上级目录（如 `/vol1`）可能因权限不足而无法展开，此时使用「已授权目录」或手动输入完整路径；
+- 若授权后仍看不到目录，请确认授权的是文件夹而非单个文件，并在应用设置中保存后再打开选择器。
 
 ### 重新打包
 

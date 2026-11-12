@@ -1,2 +1,13 @@
 #!/bin/bash
+# 授权目录变更时由 fnOS 调用：把 TRIM_DATA_ACCESSIBLE_PATHS 写入应用数据目录，
+# 服务端会在下次请求时自动读取，无需重启。
+if [ -z "${TRIM_DATA_ACCESSIBLE_PATHS+x}" ]; then
+    exit 0
+fi
+DATA_DIR="${TRIM_PKGVAR}/data"
+mkdir -p "${DATA_DIR}" 2>/dev/null
+printf '%s\n' "${TRIM_DATA_ACCESSIBLE_PATHS}" \
+    | tr ':' '\n' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | sed '/^$/d' > "${DATA_DIR}/mount-roots.txt" 2>/dev/null
 exit 0

@@ -1,2 +1,12 @@
 #!/bin/bash
+# 授权目录保存后由 fnOS 调用：同步授权路径，服务会在下次请求时自动读取。
+if [ -z "${TRIM_DATA_ACCESSIBLE_PATHS+x}" ]; then
+    exit 0
+fi
+DATA_DIR="${TRIM_PKGVAR}/data"
+mkdir -p "${DATA_DIR}" 2>/dev/null
+printf '%s\n' "${TRIM_DATA_ACCESSIBLE_PATHS}" \
+    | tr ':' '\n' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | sed '/^$/d' > "${DATA_DIR}/mount-roots.txt" 2>/dev/null
 exit 0

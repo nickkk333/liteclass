@@ -13,7 +13,8 @@ function requireAdmin(req, res, next) {
 router.get("/fs/dirs", requireAuth, requireAdmin, (req, res) => {
   const dir = req.query.path ? String(req.query.path) : "";
   const result = listDirs(dir);
-  if (result.error) return res.status(400).json({ error: result.error });
+  // 权限不足等错误仍返回当前上下文，方便前端继续从「授权目录」进入其他位置
+  if (result.error && !result.path) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 

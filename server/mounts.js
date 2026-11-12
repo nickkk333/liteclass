@@ -1,13 +1,60 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "./db.js";
+import { ROOT, DATA_DIR } from "./db.js";
 import { SCAN_EXTS, kindOf } from "./media.js";
 
 const isWin = process.platform === "win32";
 
+// fnOS 会把用户授权的目录写入该文件（由 cmd/main 与 cmd/config_* 维护），
+// 授权变更后无需重启服务即可刷新。
+const ROOTS_FILE = path.join(DATA_DIR, "mount-roots.txt");
+
+function splitList(raw) {
+  return String(raw || "")
+    .split(isWin ? ";" : ":")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function envRoots() {
-  const raw = process.env.LITECLASS_MOUNT_ROOTS || "";
-  return raw.split(isWin ? ";" : ":").map((s) => s.trim()).filter(Boolean);
+  return splitList(process.env.LITECLASS_MOUNT_ROOTS);
+}
+
+function readRootsFile() {
+  try {
+    const paths = fs.readFileSync(ROOTS_FILE, "utf8")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return { exists: true, paths };
+  } catch {
+    return { exists: false, paths: [] };
+  }
+}
+
+/** fnOS 应用设置里授权的目录（TRIM_DATA_ACCESSIBLE_PATHS / 持久化文件） */
+function authorizedPaths() {
+  const file = readRootsFile();
+  const raw = file.exists
+    ? file.paths
+    : [
+        ...splitList(process.env.LITECLASS_AUTHORIZED_PATHS),
+        ...splitList(process.env.TRIM_DATA_ACCESSIBLE_PATHS),
+      ];
+
+  const out = [];
+  for (const entry of raw) {
+    if (!path.isAbsolute(entry)) continue;
+    const resolved = path.resolve(entry);
+    if (out.includes(resolved)) continue;
+    try {
+      if (!fs.statSync(resolved).isDirectory()) continue;
+    } catch {
+      continue; // 目录被移除 / 未挂载时忽略
+    }
+    out.push(resolved);
+  }
+  return out;
 }
 
 function detectedRoots() {
@@ -28,11 +75,50 @@ function detectedRoots() {
   return vols.length ? vols : ["/"];
 }
 
-/** 允许挂载/浏览的根目录，可用 LITECLASS_MOUNT_ROOTS 覆盖（Windows 用 ; 分隔，类 Unix 用 : 分隔） */
-export const MOUNT_ROOTS = (envRoots().length ? envRoots() : detectedRoots()).map((p) => path.resolve(p));
+/** 允许挂载/浏览的根目录：已授权目录优先，其后是存储空间；可用 LITECLASS_MOUNT_ROOTS 覆盖 */
+function computeRoots() {
+  const env = envRoots();
+  const base = env.length ? env : detectedRoots();
+  const authorized = authorizedPaths();
+  const roots = [];
+  for (const entry of [...authorized, ...base]) {
+    const resolved = path.resolve(entry);
+    if (!roots.includes(resolved)) roots.push(resolved);
+  }
+  return { roots, authorized, key: rootsKey() };
+}
+
+let cache = { key: null, roots: [], authorized: [] };
+
+function rootsKey() {
+  let stamp = "none";
+  try {
+    stamp = String(fs.statSync(ROOTS_FILE).mtimeMs);
+  } catch {}
+  return [
+    stamp,
+    process.env.LITECLASS_MOUNT_ROOTS || "",
+    process.env.LITECLASS_AUTHORIZED_PATHS || "",
+    process.env.TRIM_DATA_ACCESSIBLE_PATHS || "",
+  ].join("|");
+}
+
+/** 当前生效的挂载根目录（授权目录排在最前） */
+export function mountRoots() {
+  const key = rootsKey();
+  if (key !== cache.key) cache = computeRoots();
+  return cache.roots;
+}
+
+/** 当前已授权目录 */
+export function authorizedRoots() {
+  const key = rootsKey();
+  if (key !== cache.key) cache = computeRoots();
+  return cache.authorized;
+}
 
 function rootFor(target) {
-  return MOUNT_ROOTS.find((root) => {
+  return mountRoots().find((root) => {
     const base = root.endsWith(path.sep) ? root : root + path.sep;
     return target === root || target.startsWith(base);
   });
@@ -61,19 +147,34 @@ const natural = (a, b) => a.localeCompare(b, "zh-CN", { numeric: true, sensitivi
 
 /** 浏览某个挂载目录下的子文件夹 */
 export function listDirs(dir) {
+  const roots = mountRoots();
+  const authorized = authorizedRoots();
+  const authorizedSet = new Set(authorized);
+
   if (!dir) {
     return {
       path: "",
       parent: null,
-      roots: MOUNT_ROOTS,
-      entries: MOUNT_ROOTS.map((p) => ({ name: p, path: p })),
+      roots,
+      authorized,
+      entries: roots.map((p) => ({ name: p, path: p, authorized: authorizedSet.has(p) })),
     };
   }
+
   const target = normalizeMountPath(dir);
-  if (!target) return { error: "路径不在允许的挂载目录内" };
+  if (!target) return { error: "路径不在允许的挂载目录内", roots, authorized, entries: [] };
+
+  const root = rootFor(target);
+  const parent = target === root ? null : path.dirname(target);
+  const context = { path: target, parent, roots, authorized, entries: [] };
+
   let stat;
-  try { stat = fs.statSync(target); } catch { return { error: "目录不存在或无法访问" }; }
-  if (!stat.isDirectory()) return { error: "该路径不是文件夹" };
+  try {
+    stat = fs.statSync(target);
+  } catch {
+    return { ...context, error: "目录不存在或未挂载" };
+  }
+  if (!stat.isDirectory()) return { ...context, error: "该路径不是文件夹" };
 
   let dirents = [];
   try {
@@ -82,16 +183,20 @@ export function listDirs(dir) {
         if (!e.isDirectory() || skipName(e.name)) return false;
         return true;
       })
-      .map((e) => ({ name: e.name, path: path.join(target, e.name) }))
+      .map((e) => {
+        const full = path.join(target, e.name);
+        return { name: e.name, path: full, authorized: authorizedSet.has(full) };
+      })
       .sort((a, b) => natural(a.name, b.name))
       .slice(0, 500);
   } catch {
-    return { error: "目录无法读取，请检查权限" };
+    return {
+      ...context,
+      error: "无法读取该目录：当前应用用户没有权限。请在「应用中心 → 轻课堂 → 设置 → 授权目录」中授权该目录后重试。",
+    };
   }
 
-  const root = rootFor(target);
-  const parent = target === root ? null : path.dirname(target);
-  return { path: target, parent, roots: MOUNT_ROOTS, entries: dirents };
+  return { ...context, entries: dirents };
 }
 
 /** 递归扫描挂载目录中的课程文件（音视频 / 文档），按文件名自然排序 */

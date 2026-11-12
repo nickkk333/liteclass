@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Folder, HardDrive } from "lucide-react";
+import { ChevronLeft, ChevronRight, Folder, HardDrive, ShieldCheck } from "lucide-react";
 import { api } from "../api.js";
 import { Modal, Spinner } from "./ui.jsx";
 
@@ -7,6 +7,7 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [typed, setTyped] = useState(initial || "");
 
   const load = async (target) => {
     setLoading(true);
@@ -14,16 +15,47 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
     try {
       const res = await api(`/fs/dirs${target ? `?path=${encodeURIComponent(target)}` : ""}`);
       setData(res);
+      setTyped(res.path || "");
+      if (res.error) setError(res.error);
     } catch (e) {
       setError(e.message);
     }
     setLoading(false);
   };
 
-  useEffect(() => { load(initial); }, []);
+  useEffect(() => {
+    (async () => {
+      if (!initial) return load("");
+      setLoading(true);
+      try {
+        const res = await api(`/fs/dirs?path=${encodeURIComponent(initial)}`);
+        setData(res);
+        setTyped(res.path || "");
+        if (res.error) setError(res.error);
+      } catch {
+        // 之前保存的路径可能已不在授权范围内，回退到根目录列表
+        await load("");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const current = data?.path || "";
   const entries = data?.entries || [];
+  const authorized = data?.authorized || [];
+  const volumes = (data?.roots || []).filter((root) => !authorized.includes(root));
+
+  const jump = (event) => {
+    event?.preventDefault();
+    load(typed.trim());
+  };
+
+  const renderRoot = (root, isAuthorized) => (
+    <button className={`picker-root ${isAuthorized ? "authorized" : ""}`} key={root} onClick={() => load(root)}>
+      {isAuthorized ? <ShieldCheck size={13} /> : <HardDrive size={13} />} {root}
+    </button>
+  );
 
   return (
     <Modal
@@ -50,17 +82,32 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
         )}
       </div>
 
-      {error && <p className="danger-text small">{error}</p>}
-
-      {current && !!data?.roots?.length && (
-        <div className="picker-roots">
-          {data.roots.map((root) => (
-            <button className="picker-root" key={root} onClick={() => load(root)}>
-              <HardDrive size={13} /> {root}
-            </button>
-          ))}
+      {!!authorized.length && (
+        <div className="picker-section">
+          <div className="picker-label"><ShieldCheck size={12} /> 已授权目录</div>
+          <div className="picker-roots">{authorized.map((root) => renderRoot(root, true))}</div>
         </div>
       )}
+
+      {!!volumes.length && (
+        <div className="picker-section">
+          <div className="picker-label"><HardDrive size={12} /> 存储空间</div>
+          <div className="picker-roots">{volumes.map((root) => renderRoot(root, false))}</div>
+        </div>
+      )}
+
+      <form className="picker-jump" onSubmit={jump}>
+        <input
+          className="input"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="手动输入路径，例如 /vol1/1000/课程"
+          spellCheck={false}
+        />
+        <button className="btn" type="submit" disabled={loading}>跳转</button>
+      </form>
+
+      {(error || data?.error) && <p className="picker-error">{error || data?.error}</p>}
 
       {loading ? (
         <div className="row" style={{ justifyContent: "center", padding: 26 }}><Spinner /></div>
@@ -76,11 +123,15 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
             <button className="picker-item" key={entry.path} onClick={() => load(entry.path)}>
               <Folder size={16} color="var(--primary)" />
               <span className="grow ellipsis" title={entry.name}>{entry.name}</span>
+              {entry.authorized && <span className="picker-badge">已授权</span>}
               <ChevronRight size={15} color="var(--muted)" />
             </button>
           ))}
-          {current && entries.length === 0 && !loading && (
+          {current && entries.length === 0 && !loading && !data?.error && (
             <div className="picker-empty">该目录下没有子文件夹</div>
+          )}
+          {current && entries.length === 0 && data?.error && (
+            <div className="picker-empty">可点击上方「已授权目录」直接进入，或手动输入完整路径后跳转。</div>
           )}
         </div>
       )}

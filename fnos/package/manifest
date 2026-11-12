@@ -1,5 +1,5 @@
 appname               = liteclass
-version               = 1.0.0
+version               = 1.0.1
 display_name          = 轻课堂
 desc                  = 轻课堂 Lite Class 是一个轻量在线学习平台，支持课程管理、音视频播放、学习进度、笔记、资料下载、讨论、在线考试、一起看与观看排行榜。
 platform              = x86
@@ -14,4 +14,4 @@ desktop_applaunchname = liteclass.main
 ctl_stop              = true
 service_port          = 3000
 checkport             = true
-changelog             = 首个版本：课程与章节管理、音视频播放与进度记忆、笔记、资料、讨论、考试、一起看、排行榜，以及 NAS 挂载课程目录。
+changelog             = 1.0.1：读取 fnOS「授权目录」（TRIM_DATA_ACCESSIBLE_PATHS），文件夹选择器新增「已授权目录」快捷入口、手动路径跳转与权限提示；授权变更后无需重启即可生效。
