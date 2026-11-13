@@ -463,7 +463,7 @@ export default function CourseDetail() {
                   </div>
                   : <div className="player-fallback"><Music size={52} /></div>}
                 <div className="player-meta">
-                  <h2>{current.title.replace(/\.(wav|mp3|m4a|flac|aac|ogg)$/i, "")}</h2>
+                  <h2>{current.title.replace(/\.(wav|mp3|m4a|flac|aac|ogg)$/i, "")}{current.file_ext ? <span className="file-ext">{current.file_ext}</span> : null}</h2>
                   <p>{course.uploader_name} · {fmtDuration(duration || current.duration)}</p>
                 </div>
                 {playback.preparing ? <div className="subtitle-hint small muted">正在准备可播音源…</div> : null}
@@ -658,7 +658,7 @@ export default function CourseDetail() {
                     <div key={m.id} className={`material-row ${m.id === currentId ? "active" : ""}`} onClick={() => selectMaterial(m)}>
                       <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
                       <div className="material-info">
-                        <div className="t clamp-2">{m.title}</div>
+                        <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
                         <div className="m">
                           {MODE_LABELS[mediaModeOf(m)] || "文件"}
                           {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
@@ -720,7 +720,7 @@ export default function CourseDetail() {
                     <div className="material-row" key={m.id} onClick={() => selectMaterial(m)}>
                       <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
                       <div className="material-info">
-                        <div className="t clamp-2">{m.title}</div>
+                        <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
                         <div className="m">
                           {MODE_LABELS[mediaModeOf(m)] || "文件"}
                           {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}

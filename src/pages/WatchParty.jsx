@@ -199,7 +199,7 @@ export default function WatchParty() {
                   />
                   <div className="audio-art">
                     {room.course?.cover_image && <img src={room.course.cover_image} alt="" style={{ width: 150, height: 150, borderRadius: 16, objectFit: "cover", boxShadow: "0 18px 40px rgba(0,0,0,.45)" }} />}
-                    <h2 style={{ fontSize: 19 }}>{current.title}</h2>
+                    <h2 style={{ fontSize: 19 }}>{current.title}{current.file_ext || ""}</h2>
                     <p className="small" style={{ color: "rgba(255,255,255,.55)" }}>{fmtDuration(time)} / {fmtDuration(duration || current.duration)}</p>
                   </div>
                 </>
@@ -245,7 +245,7 @@ export default function WatchParty() {
                 </span>
                 {isHost && materials.length > 0 && (
                   <select className="select" style={{ width: 210, height: 32, padding: "4px 8px" }} value={currentId || ""} onChange={(e) => switchMaterial(e.target.value)}>
-                    {materials.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
+                    {materials.map((m) => <option key={m.id} value={m.id}>{m.title}{m.file_ext || ""}</option>)}
                   </select>
                 )}
               </div>

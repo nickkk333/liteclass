@@ -160,7 +160,7 @@ export default function ManageCourse() {
               {modeOf(m) === "video" ? <Video size={15} /> : modeOf(m) === "audio" ? <Music size={15} /> : modeOf(m) === "image" ? <ImageIcon size={15} /> : <FileText size={15} />}
             </div>
             <div className="grow">
-              <div className="mtitle ellipsis">{m.title}</div>
+              <div className="mtitle ellipsis">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
               <div className="dur">
                 {isTimed(m) ? (Number(m.duration) > 0 ? fmtDuration(m.duration) : "时长未知") : TYPE_LABELS[modeOf(m)] || "文件"}
                 {` · ${TYPE_LABELS[modeOf(m)] || "文件"}`}

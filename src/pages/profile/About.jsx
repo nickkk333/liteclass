@@ -21,15 +21,6 @@ export default function AboutView({ onBack }) {
           <div className="about-meta"><span className="muted">项目地址</span><span>github.com/liteclass</span></div>
         </div>
 
-        <div className="card" style={{ padding: 20, marginTop: 16 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700 }}>赞赏支持</h3>
-          <p className="muted small" style={{ marginTop: 6 }}>如果您觉得这个项目对您有帮助，欢迎请作者喝杯咖啡</p>
-          <div className="qr-box">
-            <div className="qr"><img className="img" src="/qr-wechat.svg" alt="微信赞赏码" style={{ background: "#fff", objectFit: "contain" }} />微信</div>
-            <div className="qr"><img className="img" src="/qr-alipay.svg" alt="支付宝赞赏码" style={{ background: "#fff", objectFit: "contain" }} />支付宝</div>
-          </div>
-        </div>
-
         <p className="muted small" style={{ textAlign: "center", marginTop: 22 }}>专为 NAS 用户打造的轻量级、多用户私有云学习管理系统。</p>
       </div>
     </>

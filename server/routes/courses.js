@@ -4,7 +4,7 @@ import { Router } from "express";
 import multer from "multer";
 import { all, get, run, now, today, UPLOAD_DIR } from "../db.js";
 import { requireAuth, optionalAuth } from "../auth.js";
-import { kindOf, previewMode } from "../media.js";
+import { kindOf, previewMode, extOf } from "../media.js";
 import { scanFolder, attachSubtitles, isMountedFile } from "../mounts.js";
 import { normalizeAnyPath, isVirtualPath } from "../paths.js";
 import { repo } from "../sources.js";
@@ -191,14 +191,24 @@ router.get("/courses/:id", optionalAuth, (req, res) => {
      FROM materials m LEFT JOIN progress p ON p.material_id = m.id AND p.user_id = ?
      WHERE m.course_id = ? ORDER BY m.sort_order ASC, m.id ASC`,
     user?.id ?? 0, course.id
-  ).map((m) => ({
-    ...m,
-    preview_mode: previewMode(m.file_path || m.title, m.file_type),
-    has_subtitle: !!(m.subtitle_path && m.file_path),
-    file_path: undefined,
-    subtitle_path: undefined,
-    tone: undefined,
-  }));
+  ).map((m) => {
+    // 只从真实文件名取扩展名（标题中的「01.」不是后缀），且不向前端暴露挂载/虚拟路径
+    const raw = m.file_path ? extOf(m.file_path) : "";
+    const fileExt = /^\.[a-z0-9]{1,8}$/.test(raw)
+      ? raw
+      : (m.file_type === "audio" && !m.file_path ? ".wav" : ""); // 内置示例音频由服务端合成 WAV
+    return {
+      ...m,
+      // 旧数据里标题可能自带扩展名，标题与后缀分开展示，避免重复
+      title: fileExt && m.title?.toLowerCase().endsWith(fileExt) ? m.title.slice(0, -fileExt.length) : m.title,
+      preview_mode: previewMode(m.file_path || m.title, m.file_type),
+      has_subtitle: !!(m.subtitle_path && m.file_path),
+      file_ext: fileExt,
+      file_path: undefined,
+      subtitle_path: undefined,
+      tone: undefined,
+    };
+  });
   const creator = get("SELECT username, nickname, role FROM users WHERE id = ?", course.creator_id);
   res.json({
     ...course,
