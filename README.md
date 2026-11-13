@@ -61,16 +61,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.2_x86.fpk
+release/liteclass_1.0.3_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.2_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.3_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.2_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.3_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:3000`（端口可在应用设置中修改）。

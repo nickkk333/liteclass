@@ -4,7 +4,7 @@ import {
   ArrowLeft, Heart, Settings2, Play, Pause, SkipBack, SkipForward, SquarePlay,
   Volume2, VolumeX, Repeat1, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
   Music, FileText, Video, Trash2, Send, Clock, Download, Pencil, CornerDownRight,
-  PanelRight, X, ListMusic, PauseCircle, CheckCircle2,
+  PanelRight, X, ListMusic, PauseCircle, CheckCircle2, Minimize, Check,
 } from "lucide-react";
 import { api, fmtDuration, fmtDateTime, streamUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -58,14 +58,20 @@ export default function CourseDetail() {
   const [withTimestamp, setWithTimestamp] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [sideOpen, setSideOpen] = useState(false);
+  const [isFull, setIsFull] = useState(false);
+  const [fauxFull, setFauxFull] = useState(false);
+  const [modeMenu, setModeMenu] = useState(false);
 
   const audioRef = useRef(null);
+  const playerRef = useRef(null);
   const lastReport = useRef(0);
   const stateRef = useRef({ currentId, playing, time });
 
   const current = useMemo(() => course?.materials?.find((m) => m.id === currentId) || null, [course, currentId]);
   const currentIndex = useMemo(() => course?.materials?.findIndex((m) => m.id === currentId) ?? -1, [course, currentId]);
   const ModeIcon = PLAY_MODES.find(([key]) => key === mode)?.[2] || ListMusic;
+  const modeLabel = PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放";
+  const fullActive = isFull || fauxFull;
 
   const load = async () => {
     const c = await api(`/courses/${id}`);
@@ -117,6 +123,78 @@ export default function CourseDetail() {
     return () => { window.removeEventListener("pagehide", onUnload); onUnload(); };
   }, []);
 
+  // 全屏状态同步（含 Safari / WebView 前缀）
+  useEffect(() => {
+    const sync = () => {
+      const native = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      setIsFull(native);
+      if (native) setFauxFull(false);
+    };
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
+  }, []);
+
+  // 浏览器不支持全屏 API 时（iPhone / 部分 WebView）用 CSS 伪全屏兜底
+  useEffect(() => {
+    if (!fauxFull) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") setFauxFull(false); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fauxFull]);
+
+  const toggleFullscreen = async () => {
+    const card = playerRef.current;
+    const docFull = document.fullscreenElement || document.webkitFullscreenElement;
+    if (docFull) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      try { await exit?.call(document); } catch {}
+      return;
+    }
+    if (fauxFull) { setFauxFull(false); return; }
+
+    // 1) 原生元素全屏（桌面浏览器）。部分环境返回的 Promise 会一直挂起，用超时兜底
+    const request = card?.requestFullscreen || card?.webkitRequestFullscreen || card?.msRequestFullscreen;
+    if (card && request) {
+      try {
+        const pending = request.call(card);
+        if (pending && typeof pending.then === "function") {
+          await Promise.race([
+            pending.catch(() => {}),
+            new Promise((resolve) => setTimeout(resolve, 800)),
+          ]);
+        }
+      } catch {}
+      if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    }
+
+    // 2) iPhone Safari：普通元素不支持全屏，退回视频原生全屏
+    const video = card?.querySelector("video");
+    if (video?.webkitEnterFullscreen) {
+      try { video.webkitEnterFullscreen(); return; } catch {}
+    }
+
+    // 3) 最后的兜底：CSS 伪全屏，任何环境都能铺满屏幕
+    setFauxFull(true);
+  };
+
+  // 自动播放被浏览器拦截时给出可感知的提示
+  const safePlay = (el) => {
+    if (!el) return;
+    el.play().then(() => setPlaying(true)).catch(() => {
+      setPlaying(false);
+      toast("浏览器阻止了自动播放，请点击播放继续", "error");
+    });
+  };
+
   const selectMaterial = (m) => {
     if (!m) return;
     const el = audioRef.current;
@@ -137,7 +215,7 @@ export default function CourseDetail() {
     el.volume = volume;
     el.playbackRate = rate;
     el.loop = false;
-    if (stateRef.current.playing) el.play().catch(() => setPlaying(false));
+    if (stateRef.current.playing) safePlay(el);
   };
 
   const togglePlay = () => {
@@ -157,13 +235,13 @@ export default function CourseDetail() {
   const prev = () => { if (currentIndex > 0) selectMaterial(course.materials[currentIndex - 1]); };
   const next = () => { if (currentIndex < course.materials.length - 1) selectMaterial(course.materials[currentIndex + 1]); };
 
-  const cycleMode = () => {
-    const idx = PLAY_MODES.findIndex(([key]) => key === mode);
-    const [value, label] = PLAY_MODES[(idx + 1) % PLAY_MODES.length];
+  const applyMode = (value) => {
+    const [, label] = PLAY_MODES.find(([key]) => key === value) || PLAY_MODES[0];
     setMode(value);
+    setModeMenu(false);
     localStorage.setItem(PLAY_MODE_KEY, value);
     if (audioRef.current) audioRef.current.loop = false;
-    toast(label, "ok");
+    toast(`播放模式：${label}`, "ok");
   };
 
   // 播放结束：记录完成，并按当前播放模式续播 / 重播 / 停止
@@ -177,9 +255,10 @@ export default function CourseDetail() {
     if (mode === "loop") {
       if (el) {
         el.currentTime = 0;
-        el.play().catch(() => setPlaying(false));
+        safePlay(el);
+      } else {
+        setPlaying(true);
       }
-      setPlaying(true);
       return;
     }
     if (mode === "sequence" && currentIndex >= 0 && currentIndex < course.materials.length - 1) {
@@ -293,7 +372,7 @@ export default function CourseDetail() {
 
       <div className="page-plain">
         <div className={`course-layout ${sideOpen ? "side-open" : ""}`}>
-          <div className="player-card">
+          <div className={`player-card ${fauxFull ? "is-faux-full" : ""}`} ref={playerRef}>
             {current?.file_type === "video" ? (
               <div className="player-stage video">
                 <video
@@ -306,6 +385,9 @@ export default function CourseDetail() {
                   onPause={() => setPlaying(false)}
                   onEnded={(e) => handleEnded(e.currentTarget)}
                 />
+                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
+                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                </button>
               </div>
             ) : (
               <div className="player-stage" onClick={(e) => { if (!e.target.closest("button")) togglePlay(); }}>
@@ -329,8 +411,8 @@ export default function CourseDetail() {
                       <h2>{current.title.replace(/\.(wav|mp3|m4a|flac)$/i, "")}</h2>
                       <p>{course.uploader_name} · {fmtDuration(duration || current.duration)}</p>
                     </div>
-                    <button className="player-fullscreen" onClick={(e) => { e.stopPropagation(); document.documentElement.requestFullscreen?.(); }}>
-                      <Maximize size={16} />
+                    <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
+                      {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
                     </button>
                   </>
                 ) : <div className="player-meta"><p>该课程还没有章节</p></div>}
@@ -365,13 +447,40 @@ export default function CourseDetail() {
                     const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; if (v > 0 && muted) { setMuted(false); if (audioRef.current) audioRef.current.muted = false; }
                   }} />
                   <button className="rate-btn" onClick={cycleRate}>{rate}x</button>
-                  <button
-                    className={`icon-btn ${mode !== "sequence" ? "primary" : ""}`}
-                    onClick={cycleMode}
-                    title={`播放模式：${PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放"}`}
-                  >
-                    <ModeIcon size={15} />
-                  </button>
+                  <div className="mode-wrap">
+                    <button
+                      type="button"
+                      className={`mode-btn ${mode !== "sequence" ? "active" : ""}`}
+                      onClick={(e) => { e.stopPropagation(); setModeMenu((v) => !v); }}
+                      title="选择播放结束后的行为"
+                      aria-label={`播放模式：${modeLabel}`}
+                      aria-expanded={modeMenu}
+                    >
+                      <ModeIcon size={14} />
+                      <span className="mode-label">{modeLabel}</span>
+                    </button>
+                    {modeMenu && (
+                      <>
+                        <div className="mode-backdrop" onClick={() => setModeMenu(false)} />
+                        <div className="mode-menu" role="menu">
+                          {PLAY_MODES.map(([key, label, Icon]) => (
+                            <button
+                              key={key}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={key === mode}
+                              className={key === mode ? "active" : ""}
+                              onClick={(e) => { e.stopPropagation(); applyMode(key); }}
+                            >
+                              <Icon size={15} />
+                              <span>{label}</span>
+                              {key === mode && <Check size={14} />}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
