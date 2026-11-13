@@ -66,16 +66,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.3_x86.fpk
+release/liteclass_1.0.4_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.3_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.4_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.3_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.4_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:3000`（端口可在应用设置中修改）。
@@ -102,6 +102,10 @@ release/liteclass_1.0.3_x86.fpk
 - 「挂载路径 → 选择」弹窗顶部会列出 **已授权目录**，点击即可直接进入，不必从 `/vol1` 逐级向下浏览；
 - 未授权的上级目录（如 `/vol1`）可能因权限不足而无法展开，此时使用「已授权目录」或手动输入完整路径；
 - 若授权后仍看不到目录，请确认授权的是文件夹而非单个文件，并在应用设置中保存后再打开选择器。
+
+### GitHub Actions 构建
+
+仓库自带 `Build fnOS package` 工作流：在 Actions 页手动运行（可选填 tag，构建完成后直接发布到该 Release），或推送 `v*` 标签自动构建。产物 `release/liteclass_<version>_x86.fpk` 会作为 artifact 上传，tag 触发时同时附到对应 Release。
 
 ### 重新打包
 
