@@ -196,6 +196,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+// 既有数据库升级：字幕路径（旧库没有该列）
+try {
+  db.exec("ALTER TABLE materials ADD COLUMN subtitle_path TEXT DEFAULT ''");
+} catch {}
+
 export const now = () => {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
@@ -227,7 +232,7 @@ export function publicSettings() {
     allow_course_creation: setting("allow_course_creation", "true") === "true",
     max_material_size: Number(setting("max_material_size", "100")),
     max_course_size: Number(setting("max_course_size", "1024")),
-    enable_transcoding: setting("enable_transcoding", "false") === "true",
+    enable_transcoding: setting("enable_transcoding", "true") === "true",
     show_watch_ranking_on_home: setting("show_watch_ranking_on_home", "false") === "true",
     version: setting("version", "1.1.6"),
   };

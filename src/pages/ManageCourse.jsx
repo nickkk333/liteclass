@@ -2,11 +2,18 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Plus, GripVertical, Music, Video, FileText, Pencil, Trash2, UploadCloud,
-  CheckSquare, Square, Settings2, X, FolderOpen,
+  CheckSquare, Square, Settings2, X, FolderOpen, Image as ImageIcon,
 } from "lucide-react";
 import { api, fmtDuration } from "../api.js";
 import { useToast, Modal, Confirm, Empty, Spinner } from "../components/ui.jsx";
 import CourseForm from "../components/CourseForm.jsx";
+
+const TYPE_LABELS = {
+  video: "视频", audio: "音频", image: "图片", pdf: "PDF", html: "网页",
+  text: "文本", markdown: "Markdown", office: "Office 文档", other: "文件",
+};
+const modeOf = (m) => m.preview_mode || m.file_type || "other";
+const isTimed = (m) => modeOf(m) === "video" || modeOf(m) === "audio";
 
 export default function ManageCourse() {
   const { id } = useParams();
@@ -150,11 +157,16 @@ export default function ManageCourse() {
               selected.includes(m.id) ? <CheckSquare size={18} color="var(--primary)" /> : <Square size={18} color="var(--muted)" />
             ) : <GripVertical size={16} className="handle" />}
             <div className="material-thumb" style={{ width: 34, height: 34 }}>
-              {m.file_type === "video" ? <Video size={15} /> : m.file_type === "audio" ? <Music size={15} /> : <FileText size={15} />}
+              {modeOf(m) === "video" ? <Video size={15} /> : modeOf(m) === "audio" ? <Music size={15} /> : modeOf(m) === "image" ? <ImageIcon size={15} /> : <FileText size={15} />}
             </div>
             <div className="grow">
               <div className="mtitle ellipsis">{m.title}</div>
-              <div className="dur">{Number(m.duration) > 0 ? fmtDuration(m.duration) : "时长未知"} · {m.file_type.toUpperCase()}{m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}</div>
+              <div className="dur">
+                {isTimed(m) ? (Number(m.duration) > 0 ? fmtDuration(m.duration) : "时长未知") : TYPE_LABELS[modeOf(m)] || "文件"}
+                {` · ${TYPE_LABELS[modeOf(m)] || "文件"}`}
+                {isTimed(m) && m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                {m.has_subtitle ? " · 含字幕" : ""}
+              </div>
             </div>
             {!selecting && (
               <>

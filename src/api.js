@@ -39,6 +39,29 @@ export function streamUrl(materialId) {
   return `/api/stream/${materialId}?token=${encodeURIComponent(getToken())}`;
 }
 
+/** 文档 / 网页预览（服务端转成无脚本 HTML 或原样输出） */
+export function previewUrl(materialId) {
+  return `/api/preview/${materialId}/page?token=${encodeURIComponent(getToken())}`;
+}
+
+/** 字幕统一转好的 WebVTT */
+export function subtitleUrl(materialId) {
+  return `/api/subtitles/${materialId}?token=${encodeURIComponent(getToken())}`;
+}
+
+// 转码 / 投屏 / 课程来源
+export const mediaStatus = (id, hls = true) => api(`/media/status/${id}${hls ? "" : "?hls=0"}`);
+export const mediaPlan = (id) => api(`/media/plan/${id}`);
+export const castDevices = (refresh = false) => api(`/dlna/devices${refresh ? "?refresh=1" : ""}`);
+export const castTo = (body) => api("/dlna/cast", { method: "POST", body });
+export const castControl = (body) => api("/dlna/control", { method: "POST", body });
+export const castSession = () => api("/dlna/session");
+export const sourcesList = () => api("/sources");
+export const sourceSave = (body, edit = false) => api("/sources", { method: edit ? "PUT" : "POST", body });
+export const sourceTest = (body) => api("/sources/test", { method: "POST", body });
+export const sourceConnect = (body) => api("/sources/connect", { method: "POST", body });
+export const sourceRemove = (id) => api("/sources/remove", { method: "POST", body: { id } });
+
 export function fmtDuration(sec) {
   sec = Math.max(0, Math.floor(Number(sec) || 0));
   const h = Math.floor(sec / 3600);

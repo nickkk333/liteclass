@@ -82,6 +82,19 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
         )}
       </div>
 
+      {!!(data?.sources || []).length && (
+        <div className="picker-section">
+          <div className="picker-label"><HardDrive size={12} /> 课程来源（WebDAV / SMB / 本地）</div>
+          <div className="picker-roots">
+            {(data?.sources || []).map((source) => (
+              <button className="picker-root authorized" key={source.path} onClick={() => load(source.path)}>
+                <HardDrive size={13} /> {source.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!!authorized.length && (
         <div className="picker-section">
           <div className="picker-label"><ShieldCheck size={12} /> 已授权目录</div>

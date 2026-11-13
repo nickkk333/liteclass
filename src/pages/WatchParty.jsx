@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Pause, Volume2, Music, Video, Send, Users, Radio, SkipForward } from "lucide-react";
-import { api, fmtDuration, getToken, streamUrl } from "../api.js";
+import { ArrowLeft, Play, Pause, Volume2, Music, Video, Send, Users, Radio, SkipForward, FileText } from "lucide-react";
+import { api, fmtDuration, getToken, streamUrl, previewUrl, subtitleUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { useToast, Avatar, Empty, Spinner } from "../components/ui.jsx";
+import usePlaybackSource from "../hooks/usePlaybackSource.js";
 
 export default function WatchParty() {
   const { roomId } = useParams();
@@ -27,6 +28,17 @@ export default function WatchParty() {
   hostRef.current = isHost;
 
   const current = useMemo(() => materials.find((m) => m.id === currentId), [materials, currentId]);
+  const mediaMode = current?.preview_mode || current?.file_type || "other";
+  const timed = mediaMode === "video" || mediaMode === "audio";
+  const playingRef = useRef(false);
+  playingRef.current = playing;
+  const playback = usePlaybackSource({
+    mediaRef: audioRef,
+    materialId: current?.id,
+    enabled: timed,
+    streamUrl: current ? streamUrl(current.id) : "",
+    autoPlayRef: playingRef,
+  });
 
   useEffect(() => {
     (async () => {
@@ -154,21 +166,27 @@ export default function WatchParty() {
                   <Radio size={44} opacity={0.4} />
                   <p className="muted">房主还没有选择播放内容</p>
                 </div>
-              ) : current.file_type === "video" ? (
+              ) : mediaMode === "video" ? (
                 <video
+                  key={playback.elementKey}
                   ref={audioRef}
-                  src={streamUrl(current.id)}
+                  src={playback.src}
                   controls={isHost}
                   onLoadedMetadata={onLoadedMetadata}
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
                   onPlay={() => { if (isHost) { setPlaying(true); sendSync({ playing: true }); } }}
                   onPause={() => { if (isHost) { setPlaying(false); sendSync({ playing: false }); } }}
-                />
-              ) : (
+                >
+                  {current.has_subtitle ? (
+                    <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
+                  ) : null}
+                </video>
+              ) : mediaMode === "audio" ? (
                 <>
                   <audio
+                    key={playback.elementKey}
                     ref={audioRef}
-                    src={streamUrl(current.id)}
+                    src={playback.src}
                     onLoadedMetadata={onLoadedMetadata}
                     onTimeUpdate={(e) => setTime(e.target.currentTime)}
                     onPlay={() => setPlaying(true)}
@@ -185,10 +203,29 @@ export default function WatchParty() {
                     <p className="small" style={{ color: "rgba(255,255,255,.55)" }}>{fmtDuration(time)} / {fmtDuration(duration || current.duration)}</p>
                   </div>
                 </>
+              ) : mediaMode === "image" ? (
+                <a className="party-doc" href={streamUrl(current.id)} target="_blank" rel="noreferrer">
+                  <img src={streamUrl(current.id)} alt={current.title} />
+                </a>
+              ) : mediaMode === "pdf" || mediaMode === "html" || mediaMode === "text" || mediaMode === "markdown" || mediaMode === "office" ? (
+                <iframe
+                  key={current.id}
+                  className="party-doc party-doc-frame"
+                  src={mediaMode === "pdf" ? streamUrl(current.id) : previewUrl(current.id)}
+                  title={current.title}
+                  sandbox={mediaMode === "pdf" ? undefined : "allow-same-origin"}
+                />
+              ) : (
+                <div className="audio-art" style={{ minHeight: 300 }}>
+                  <FileText size={44} opacity={0.4} />
+                  <p className="muted">该章节暂不支持一起看，请下载后查看</p>
+                </div>
               )}
+              {timed && playback.preparing ? <div className="party-preparing">正在准备可播版本…</div> : null}
             </div>
 
             <div className="card" style={{ padding: 14, marginTop: 12 }}>
+              {timed && (
               <div className="row" style={{ gap: 10 }}>
                 <button className="play-main" onClick={toggle} disabled={!isHost} style={{ opacity: isHost ? 1 : 0.5 }}>
                   {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" style={{ marginLeft: 2 }} />}
@@ -200,6 +237,7 @@ export default function WatchParty() {
                 <Volume2 size={16} color="var(--muted)" />
                 <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => { const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; }} style={{ width: 70, accentColor: "var(--primary)" }} />
               </div>
+              )}
               <div className="row" style={{ marginTop: 10, justifyContent: "space-between" }}>
                 <span className="muted small">
                   {isHost ? "你是房主，可以控制播放进度" : "跟随房主同步播放"}

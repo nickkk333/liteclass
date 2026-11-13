@@ -12,9 +12,13 @@ import examRoutes from "./routes/exams.js";
 import roomRoutes, { attachRooms } from "./routes/rooms.js";
 import fsRoutes from "./routes/fs.js";
 import streamRoutes from "./stream.js";
+import mediaRoutes from "./routes/media.js";
+import dlnaRoutes from "./routes/dlna.js";
+import sourcesRoutes from "./routes/sources.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set("trust proxy", true);
 const server = http.createServer(app);
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -32,6 +36,9 @@ app.use("/api", fsRoutes);
 app.use("/api", examRoutes);
 app.use("/api", roomRoutes);
 app.use("/api", streamRoutes);
+app.use("/api", mediaRoutes);
+app.use("/api", dlnaRoutes);
+app.use("/api", sourcesRoutes);
 
 app.get("/api/ping", (req, res) => res.json({ ok: true, name: "轻课堂 Lite Class" }));
 

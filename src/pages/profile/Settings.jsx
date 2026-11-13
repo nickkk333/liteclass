@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Cpu, Check, Pencil } from "lucide-react";
+import SourcesPanel from "../../components/SourcesPanel.jsx";
 import { api } from "../../api.js";
 import { useToast, Switch, Spinner } from "../../components/ui.jsx";
 import SubHeader from "../../components/SubHeader.jsx";
@@ -61,15 +61,14 @@ export default function SettingsView({ onBack }) {
           <div className="settings-row" style={{ paddingBottom: 8 }}>
             <div className="grow">
               <div className="label">启用视频转码</div>
-              <div className="desc">开启后，自动转码非 MP4 视频（建议都用 mp4，转码和挂载非 mp4 视频体验都不好）</div>
+              <div className="desc">开启后，浏览器不支持的容器/编码由服务端转成 HLS 或 MP4；关闭则始终提供原始文件</div>
             </div>
             <Switch checked={!!settings.enable_transcoding} onChange={(v) => update({ enable_transcoding: v })} />
           </div>
-          <div className="settings-group-title">GPU 加速转码</div>
-          <div className="gpu-box">
-            <div className="gpu-line"><span>当前编码器</span><b style={{ color: "#10b981" }}>🚀 VAAPI (Intel i965)</b></div>
-            <div className="gpu-line"><span>加速状态</span><span className="badge badge-green">GPU 加速</span></div>
-            <div className="gpu-good"><Check size={12} /> 已启用 GPU 硬件加速，转码速度将大幅提升。</div>
+          <div className="desc" style={{ padding: "0 14px 12px" }}>
+            需要服务端安装 ffmpeg / ffprobe（或设置 <code>LITECLASS_FFMPEG</code>、<code>LITECLASS_FFPROBE</code>）；未找到时自动回退为原始流。
+            转码缓存位于 <code>data/cache</code>，可用 <code>LITECLASS_CACHE_LIMIT_GB</code> 限制容量。
+            DLNA 投屏可用 <code>LITECLASS_DLNA=off</code> 关闭。
           </div>
         </div>
 
@@ -106,6 +105,10 @@ export default function SettingsView({ onBack }) {
               <span className="unit">MB</span>
             </div>
           </div>
+        </div>
+
+        <div className="settings-group">
+          <SourcesPanel />
         </div>
       </div>
     </>

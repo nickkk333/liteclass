@@ -125,7 +125,7 @@ function seed() {
 
   const settings = {
     allow_registration: "false", allow_course_creation: "true", max_material_size: "100",
-    max_course_size: "1024", enable_transcoding: "false", show_watch_ranking_on_home: "true", version: "1.1.6",
+    max_course_size: "1024", enable_transcoding: "true", show_watch_ranking_on_home: "true", version: "1.1.6",
   };
   for (const [k, v] of Object.entries(settings)) {
     run("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", k, v);

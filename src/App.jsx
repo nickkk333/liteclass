@@ -12,6 +12,7 @@ import Profile from "./pages/Profile.jsx";
 import Ranking from "./pages/Ranking.jsx";
 import RankingUser from "./pages/RankingUser.jsx";
 import WatchParty from "./pages/WatchParty.jsx";
+import CastBar from "./components/CastBar.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -21,7 +22,7 @@ const DEFAULT_SETTINGS = {
   allow_course_creation: true,
   max_material_size: 100,
   max_course_size: 1024,
-  enable_transcoding: false,
+  enable_transcoding: true,
   show_watch_ranking_on_home: false,
   version: "1.1.6",
 };
@@ -122,6 +123,7 @@ export default function App() {
           <Route path="/watch-party/:roomId" element={<Protected><WatchParty /></Protected>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <CastBar />
       </div>
     </ToastProvider>
   );

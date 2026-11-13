@@ -5,10 +5,13 @@ import {
   Volume2, VolumeX, Repeat1, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
   Music, FileText, Video, Trash2, Send, Clock, Download, Pencil, CornerDownRight,
   PanelRight, X, ListMusic, PauseCircle, CheckCircle2, Minimize, Check,
+  Image as ImageIcon, ExternalLink,
 } from "lucide-react";
-import { api, fmtDuration, fmtDateTime, streamUrl } from "../api.js";
+import { api, fmtDuration, fmtDateTime, streamUrl, previewUrl, subtitleUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { useToast, Empty, Avatar, Modal, Confirm, Spinner } from "../components/ui.jsx";
+import usePlaybackSource from "../hooks/usePlaybackSource.js";
+import CastMenu from "../components/CastMenu.jsx";
 
 const TABS = [
   ["list", "目录", ListVideo],
@@ -24,9 +27,25 @@ const PLAY_MODES = [
 ];
 const PLAY_MODE_KEY = "liteclass.playMode";
 
+const TIMED_MODES = new Set(["video", "audio"]);
+const DOC_MODES = new Set(["pdf", "html", "text", "markdown", "office"]);
+const MODE_LABELS = {
+  video: "视频", audio: "音频", image: "图片", pdf: "PDF",
+  html: "网页", text: "文本", markdown: "Markdown", office: "Office 文档", other: "文件",
+};
+
+/** 章节的展示方式，服务端已按扩展名算好（preview_mode） */
+const mediaModeOf = (m) => {
+  if (!m) return "other";
+  if (m.preview_mode) return m.preview_mode;
+  if (TIMED_MODES.has(m.file_type) || DOC_MODES.has(m.file_type)) return m.file_type;
+  return "other";
+};
+
 function FileIcon({ type, size = 16 }) {
   if (type === "video") return <Video size={size} />;
   if (type === "audio") return <Music size={size} />;
+  if (type === "image") return <ImageIcon size={size} />;
   return <FileText size={size} />;
 }
 
@@ -61,17 +80,29 @@ export default function CourseDetail() {
   const [isFull, setIsFull] = useState(false);
   const [fauxFull, setFauxFull] = useState(false);
   const [modeMenu, setModeMenu] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
 
   const audioRef = useRef(null);
   const playerRef = useRef(null);
   const lastReport = useRef(0);
   const stateRef = useRef({ currentId, playing, time });
+  const playingRef = useRef(false);
+  playingRef.current = playing;
 
   const current = useMemo(() => course?.materials?.find((m) => m.id === currentId) || null, [course, currentId]);
   const currentIndex = useMemo(() => course?.materials?.findIndex((m) => m.id === currentId) ?? -1, [course, currentId]);
+  const mediaMode = mediaModeOf(current);
+  const timed = TIMED_MODES.has(mediaMode);
   const ModeIcon = PLAY_MODES.find(([key]) => key === mode)?.[2] || ListMusic;
   const modeLabel = PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放";
   const fullActive = isFull || fauxFull;
+  const playback = usePlaybackSource({
+    mediaRef: audioRef,
+    materialId: current?.id,
+    enabled: timed,
+    streamUrl: current ? streamUrl(current.id) : "",
+    autoPlayRef: playingRef,
+  });
 
   const load = async () => {
     const c = await api(`/courses/${id}`);
@@ -200,10 +231,15 @@ export default function CourseDetail() {
     const el = audioRef.current;
     if (el && currentId && playing) report(currentId, el.currentTime, el.duration || 0);
     lastReport.current = 0;
+    const nextMode = mediaModeOf(m);
+    const isTimed = TIMED_MODES.has(nextMode);
     setCurrentId(m.id);
-    setPlaying(true);
+    setPlaying(isTimed);
     setTime(0);
-    setDuration(m.duration || 0);
+    setDuration(isTimed ? (m.duration || 0) : 0);
+    setMediaFailed(false);
+    // 文档、图片、PDF 没有播放进度：打开即记录为已学完
+    if (!isTimed) report(m.id, 1, 1);
   };
 
   const onLoadedMetadata = () => {
@@ -361,6 +397,7 @@ export default function CourseDetail() {
           >
             <PanelRight size={17} />
           </button>
+          <CastMenu material={current} mode={mediaMode} />
           <button className="icon-btn" title="发起一起看" onClick={() => navigate("/courses?tab=rooms")}><SquarePlay size={17} /></button>
           <button className="icon-btn" title="导出笔记" onClick={exportNotes}><Download size={17} /></button>
           <button className={`icon-btn ${course.is_favorited ? "primary" : ""}`} title="收藏" onClick={toggleFavorite}>
@@ -373,52 +410,129 @@ export default function CourseDetail() {
       <div className="page-plain">
         <div className={`course-layout ${sideOpen ? "side-open" : ""}`}>
           <div className={`player-card ${fauxFull ? "is-faux-full" : ""}`} ref={playerRef}>
-            {current?.file_type === "video" ? (
+            {mediaMode === "video" && current && (
               <div className="player-stage video">
                 <video
+                  key={playback.elementKey}
                   ref={audioRef}
-                  src={streamUrl(current.id)}
+                  src={playback.src}
                   controls
                   onLoadedMetadata={onLoadedMetadata}
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
                   onEnded={(e) => handleEnded(e.currentTarget)}
-                />
+                  onError={() => setMediaFailed(true)}
+                >
+                  {current.has_subtitle ? (
+                    <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
+                  ) : null}
+                </video>
+                {playback.preparing && (
+                  <div className="media-preparing">
+                    <Spinner /> 正在准备可播版本（{playback.mode === "hls" ? "HLS 分片" : "MP4 重封装"}）…
+                  </div>
+                )}
+                {playback.error ? <div className="media-error">{playback.error}</div> : null}
+                {mediaFailed && (
+                  <div className="media-error">
+                    <span>浏览器无法直接播放该格式，可下载后用本地播放器打开</span>
+                    <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download><Download size={14} /> 下载后播放</a>
+                  </div>
+                )}
                 <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
                   {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
                 </button>
               </div>
-            ) : (
+            )}
+
+            {mediaMode === "audio" && (
               <div className="player-stage" onClick={(e) => { if (!e.target.closest("button")) togglePlay(); }}>
-                {current ? (
-                  <>
-                    {course.cover_image
-                      ? <div className="player-cover-wrap">
-                        <img className="player-cover" src={course.cover_image} alt="" />
-                        {playing ? <div className="player-bars">{[...Array(5)].map((_, c) => (
-                          <span key={c} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            {[...Array(9)].map((_, r) => <i key={r} style={{ animationDelay: `${(c * 7 + r * 3) % 12 / 10}s` }} />)}
-                          </span>
-                        ))}</div> : (
-                          <button className="stage-play" onClick={togglePlay} aria-label="播放">
-                            <Play size={28} fill="currentColor" style={{ marginLeft: 3 }} />
-                          </button>
-                        )}
-                      </div>
-                      : <div className="player-fallback"><Music size={52} /></div>}
-                    <div className="player-meta">
-                      <h2>{current.title.replace(/\.(wav|mp3|m4a|flac)$/i, "")}</h2>
-                      <p>{course.uploader_name} · {fmtDuration(duration || current.duration)}</p>
-                    </div>
-                    <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
-                      {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
-                    </button>
-                  </>
-                ) : <div className="player-meta"><p>该课程还没有章节</p></div>}
+                {course.cover_image
+                  ? <div className="player-cover-wrap">
+                    <img className="player-cover" src={course.cover_image} alt="" />
+                    {playing ? <div className="player-bars">{[...Array(5)].map((_, c) => (
+                      <span key={c} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {[...Array(9)].map((_, r) => <i key={r} style={{ animationDelay: `${(c * 7 + r * 3) % 12 / 10}s` }} />)}
+                      </span>
+                    ))}</div> : (
+                      <button className="stage-play" onClick={togglePlay} aria-label="播放">
+                        <Play size={28} fill="currentColor" style={{ marginLeft: 3 }} />
+                      </button>
+                    )}
+                  </div>
+                  : <div className="player-fallback"><Music size={52} /></div>}
+                <div className="player-meta">
+                  <h2>{current.title.replace(/\.(wav|mp3|m4a|flac|aac|ogg)$/i, "")}</h2>
+                  <p>{course.uploader_name} · {fmtDuration(duration || current.duration)}</p>
+                </div>
+                {playback.preparing ? <div className="subtitle-hint small muted">正在准备可播音源…</div> : null}
+                {playback.error ? <div className="subtitle-hint small">{playback.error}</div> : null}
+                {(mediaFailed || current.has_subtitle) && (
+                  <div className="subtitle-hint small muted">
+                    <FileText size={13} /> {mediaFailed ? "浏览器无法播放该音频，可下载后播放" : "本音频包含字幕"}
+                  </div>
+                )}
+                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
+                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                </button>
               </div>
             )}
 
+            {mediaMode === "image" && current && (
+              <div className="player-stage image">
+                <a className="player-image-wrap" href={streamUrl(current.id)} target="_blank" rel="noreferrer" title="查看原图">
+                  <img className="player-image" src={streamUrl(current.id)} alt={current.title} />
+                </a>
+                <div className="player-meta">
+                  <h2>{current.title}</h2>
+                  <p>{course.uploader_name} · {MODE_LABELS.image}</p>
+                </div>
+                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
+                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                </button>
+              </div>
+            )}
+
+            {DOC_MODES.has(mediaMode) && current && (
+              <div className="doc-stage">
+                <iframe
+                  key={`${current.id}-${mediaMode}`}
+                  className="doc-iframe"
+                  src={mediaMode === "pdf" ? streamUrl(current.id) : previewUrl(current.id)}
+                  title={current.title}
+                  sandbox={mediaMode === "pdf" ? undefined : "allow-same-origin"}
+                />
+                <div className="doc-stage-bar">
+                  <span className="kind-tag">{MODE_LABELS[mediaMode]}</span>
+                  <a className="doc-open" href={mediaMode === "pdf" ? streamUrl(current.id) : previewUrl(current.id)} target="_blank" rel="noreferrer">
+                    <ExternalLink size={13} /> 新窗口打开
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {mediaMode === "other" && (
+              <div className="player-stage doc-fallback">
+                <FileText size={46} />
+                <div className="player-meta">
+                  <h2>{current?.title || "该课程还没有章节"}</h2>
+                  {current && <p className="small muted">该格式暂不支持在线预览，可下载后查看</p>}
+                </div>
+                {current && (
+                  <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download>
+                    <Download size={14} /> 下载原文件
+                  </a>
+                )}
+                {current && (
+                  <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
+                    {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {timed && (
             <div className="player-controls">
               <div className="player-toolbar">
                 <div className="player-buttons">
@@ -484,19 +598,47 @@ export default function CourseDetail() {
                 </div>
               </div>
             </div>
-            <audio
-              ref={audioRef}
-              src={current && current.file_type !== "video" ? streamUrl(current.id) : undefined}
-              onLoadedMetadata={onLoadedMetadata}
-              onTimeUpdate={(e) => setTime(e.target.currentTime)}
-              onPlay={() => setPlaying(true)}
-              onPause={() => {
-                setPlaying(false);
-                const el = audioRef.current;
-                if (el && current) report(current.id, el.currentTime, el.duration || 0);
-              }}
-              onEnded={() => handleEnded(audioRef.current)}
-            />
+            )}
+
+            {!timed && current && (
+              <div className="player-controls doc-controls">
+                <div className="player-toolbar">
+                  <div className="player-buttons">
+                    <button className="icon-btn" onClick={prev} disabled={currentIndex <= 0} title="上一章"><SkipBack size={17} /></button>
+                    <button className="icon-btn" onClick={next} disabled={currentIndex >= course.materials.length - 1} title="下一章"><SkipForward size={17} /></button>
+                  </div>
+                  <div className="now ellipsis">{current.title}</div>
+                  <div className="player-buttons">
+                    <a className="icon-btn" href={`${streamUrl(current.id)}&download=1`} download title="下载原文件"><Download size={16} /></a>
+                    <button className="icon-btn" onClick={toggleFullscreen} title={fullActive ? "退出全屏" : "全屏"}>
+                      {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {mediaMode === "audio" && current && (
+              <audio
+                key={playback.elementKey}
+                ref={audioRef}
+                src={playback.src}
+                onLoadedMetadata={onLoadedMetadata}
+                onTimeUpdate={(e) => setTime(e.target.currentTime)}
+                onPlay={() => setPlaying(true)}
+                onPause={() => {
+                  setPlaying(false);
+                  const el = audioRef.current;
+                  if (el) report(current.id, el.currentTime, el.duration || 0);
+                }}
+                onEnded={() => handleEnded(audioRef.current)}
+                onError={() => setMediaFailed(true)}
+              >
+                {current.has_subtitle ? (
+                  <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
+                ) : null}
+              </audio>
+            )}
           </div>
 
           {sideOpen && (
@@ -514,12 +656,14 @@ export default function CourseDetail() {
                   ? <Empty icon={<ListVideo size={26} />} text="暂无章节" />
                   : course.materials.map((m, idx) => (
                     <div key={m.id} className={`material-row ${m.id === currentId ? "active" : ""}`} onClick={() => selectMaterial(m)}>
-                      <div className="material-thumb">{m.file_type === "audio" ? <Music size={16} /> : m.file_type === "video" ? <Video size={16} /> : <FileText size={16} />}</div>
+                      <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
                       <div className="material-info">
                         <div className="t clamp-2">{m.title}</div>
                         <div className="m">
-                          时长 {Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}
-                          {m.position > 0 ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                          {MODE_LABELS[mediaModeOf(m)] || "文件"}
+                          {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
+                          {TIMED_MODES.has(mediaModeOf(m)) && m.position > 0 ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                          {m.has_subtitle ? " · 含字幕" : ""}
                         </div>
                       </div>
                       {m.completed
@@ -574,10 +718,14 @@ export default function CourseDetail() {
                   <div className="doc-toolbar"><FileText size={14} /><span className="small muted">共 {course.materials.length} 个文件</span></div>
                   {course.materials.length === 0 ? <Empty icon={<FolderOpen size={24} />} text="暂无资料" /> : course.materials.map((m) => (
                     <div className="material-row" key={m.id} onClick={() => selectMaterial(m)}>
-                      <div className="material-thumb"><FileIcon type={m.file_type} /></div>
+                      <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
                       <div className="material-info">
                         <div className="t clamp-2">{m.title}</div>
-                        <div className="m">{m.file_type.toUpperCase()} · 时长 {Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}{m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}</div>
+                        <div className="m">
+                          {MODE_LABELS[mediaModeOf(m)] || "文件"}
+                          {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
+                          {TIMED_MODES.has(mediaModeOf(m)) && m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                        </div>
                       </div>
                       <a className="icon-btn" href={`${streamUrl(m.id)}&download=1`} download onClick={(e) => e.stopPropagation()}><Download size={15} /></a>
                     </div>
