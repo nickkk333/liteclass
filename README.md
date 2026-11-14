@@ -35,14 +35,14 @@
 npm install
 npm run seed        # 首次初始化数据库与演示数据
 npm run build       # 构建前端到 dist/
-npm start           # 启动服务，访问 http://localhost:3000
+npm start           # 启动服务，访问 http://localhost:8081
 ```
 
-打开 <http://localhost:3000>，使用演示账号登录：
+打开 <http://localhost:8081>，使用演示账号登录：
 
 | 账号 | 密码 | 角色 |
 | --- | --- | --- |
-| `admin` | `admin333` | 管理员 |
+| `admin` | `admin` | 管理员 |
 | `student` | `123456` | 普通学员 |
 
 ### 开发模式
@@ -51,7 +51,7 @@ npm start           # 启动服务，访问 http://localhost:3000
 npm run dev
 ```
 
-同时启动 API（`http://localhost:3000`）与 Vite 开发服务器（`http://localhost:5173`），Vite 会把 `/api`、`/uploads`、`/media` 代理到 API，并支持 WebSocket。
+同时启动 API（`http://localhost:8081`）与 Vite 开发服务器（`http://localhost:5173`），Vite 会把 `/api`、`/uploads`、`/media` 代理到 API，并支持 WebSocket。
 
 ### 重置演示数据
 
@@ -66,21 +66,21 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.4_x86.fpk
+release/liteclass_1.0.5_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.4_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.5_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.4_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.5_x86.fpk
    ```
 
-3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:3000`（端口可在应用设置中修改）。
+3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。
 
-首次启动会自动初始化数据库并生成演示课程、音频与封面，账号与本地部署一致：`admin / admin333`、`student / 123456`。
+首次启动会自动初始化数据库并生成演示课程、音频与封面，账号与本地部署一致：`admin / admin`、`student / 123456`。分类默认为空，由管理员自行创建。
 
 ### 数据目录
 
@@ -95,12 +95,12 @@ release/liteclass_1.0.4_x86.fpk
 
 ### 读取 NAS 上的课程目录
 
-挂载路径模式需要读取 `/vol1` ~ `/vol9`。fnOS 默认不允许应用用户访问存储空间，请先在「应用中心 → 轻课堂 → 设置 → 授权目录」中添加对应目录（例如 `/vol1/1000/Media`）。
+挂载路径模式需要读取 NAS 目录。fnOS 默认不允许应用用户访问存储空间，请先在「应用中心 → 轻课堂 → 设置 → 授权目录」中添加对应目录（例如 `/vol1/1000/Media`）。
 
 应用启动时会读取 fnOS 提供的 `TRIM_DATA_ACCESSIBLE_PATHS`，并把授权目录持久化到 `$TRIM_PKGVAR/data/mount-roots.txt`；授权变更后（`cmd/config_init` / `cmd/config_callback`）无需重启应用即可生效。因此：
 
-- 「挂载路径 → 选择」弹窗顶部会列出 **已授权目录**，点击即可直接进入，不必从 `/vol1` 逐级向下浏览；
-- 未授权的上级目录（如 `/vol1`）可能因权限不足而无法展开，此时使用「已授权目录」或手动输入完整路径；
+- 「挂载路径 → 选择」弹窗只会列出 **已授权目录**（以及配置的课程来源），不再展示 `/vol1` ~ `/vol9` 这类存储空间根目录；
+- 也可以手动输入完整路径，例如 `/vol1/1000/Media/课程`；
 - 若授权后仍看不到目录，请确认授权的是文件夹而非单个文件，并在应用设置中保存后再打开选择器。
 
 ### GitHub Actions 构建
@@ -152,7 +152,7 @@ release/            打包产物（.fpk，已加入 .gitignore）
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `PORT` | `3000` | 服务端口 |
+| `PORT` | `8081` | 服务端口 |
 | `LITECLASS_SECRET` | 内置开发密钥 | JWT 签名密钥，生产环境请务必修改 |
 | `LITECLASS_MOUNT_ROOTS` | 自动探测 | 允许挂载/浏览的根目录，多个用分隔符隔开（Windows 用 `;`，Linux/macOS 用 `:`） |
 | `LITECLASS_DATA_DIR` | 项目内 `data/` | 数据目录覆盖；fpk 安装包会把它指向 `$TRIM_PKGVAR/data` |
@@ -166,12 +166,12 @@ release/            打包产物（.fpk，已加入 .gitignore）
 
 在「我的 → 课程管理 → 新增」中把「课程存储路径」切换为「挂载路径」，即可：
 
-1. 点击「选择」浏览 NAS 上已挂载到本机的目录（需先在 fnOS / Docker 中把存储空间映射进容器，例如 `/vol1`）；
+1. 点击「选择」浏览 NAS 上已授权给应用的目录（只需在「应用设置 → 授权目录」中选择，选择器不会列出 `/vol1` ~ `/vol9` 等存储空间根目录）；
 2. 也可以直接填写路径，例如 `/vol1/1000/Media/课程/数据结构`；
 3. 创建后会自动扫描该目录（含子目录）中的音视频、图片与文档（见上文「文件支持」）并生成章节，按文件名自然排序；同名字幕会自动配对，`.ts` 会按内容确认是不是 MPEG 传输流，避免把 TypeScript 源码当视频；
 4. 在「章节管理」页可点击「重新扫描」同步目录变化（新增/删除的文件），亦可在课程信息中更换挂载路径。
 
-挂载模式只读取原目录，不会复制文件；删除课程或章节也不会删除 NAS 上的原始文件。若使用 Docker 部署，请确保容器内路径与实际挂载路径一致，并用 `LITECLASS_MOUNT_ROOTS` 限定允许访问的根目录（默认 `/vol1` ~ `/vol9`、以及 Windows 盘符）。
+挂载模式只读取原目录，不会复制文件；删除课程或章节也不会删除 NAS 上的原始文件。若使用 Docker 部署，请确保容器内路径与实际挂载路径一致，并用 `LITECLASS_MOUNT_ROOTS` 限定允许访问的根目录。
 
 上传大小限制、是否开放注册、是否允许普通用户建课、首页是否显示排行榜、是否启用视频转码等均可在「我的 → 系统设置」中调整。
 

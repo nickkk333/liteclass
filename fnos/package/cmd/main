@@ -9,16 +9,12 @@ NODE_BIN="${APP_DIR}/runtime/bin/node"
 # fnOS V1.1.8+ 会把「应用设置 → 授权目录」中的路径放在 TRIM_DATA_ACCESSIBLE_PATHS（冒号分隔）。
 # 把这些目录作为挂载根目录，应用才能直接浏览/扫描用户授权的 NAS 目录。
 ACCESSIBLE_PATHS="${TRIM_DATA_ACCESSIBLE_PATHS:-}"
-VOL_ROOTS="/vol1:/vol2:/vol3:/vol4:/vol5:/vol6:/vol7:/vol8:/vol9"
 
 export LITECLASS_DATA_DIR="${DATA_DIR}"
-export PORT="${TRIM_SERVICE_PORT:-3000}"
+export PORT="${TRIM_SERVICE_PORT:-8081}"
 export LITECLASS_AUTHORIZED_PATHS="${ACCESSIBLE_PATHS}"
-if [ -n "${ACCESSIBLE_PATHS}" ]; then
-    export LITECLASS_MOUNT_ROOTS="${LITECLASS_MOUNT_ROOTS:-${ACCESSIBLE_PATHS}:${VOL_ROOTS}}"
-else
-    export LITECLASS_MOUNT_ROOTS="${LITECLASS_MOUNT_ROOTS:-${VOL_ROOTS}}"
-fi
+# 只把用户授权的目录作为挂载根目录，不再自动暴露 /vol1 ~ /vol9。
+export LITECLASS_MOUNT_ROOTS="${LITECLASS_MOUNT_ROOTS:-${ACCESSIBLE_PATHS}}"
 
 # 持久化授权目录，授权变更后服务无需重启即可刷新（见 server/mounts.js）
 if [ -n "${TRIM_DATA_ACCESSIBLE_PATHS+x}" ]; then

@@ -51,12 +51,11 @@ function seed() {
   for (const l of levels) run("INSERT INTO levels (name,min_minutes,max_minutes,text_color,is_default) VALUES (?,?,?,?,?)", ...l);
 
   run("INSERT INTO users (username,password,nickname,role,greeting_message,level_id,total_watch_seconds,lifetime_watch_seconds,created_at,last_ping_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    "admin", hash("admin333"), "admin", "admin", "你好，今天又是新的一天！", 1, 7, 7, t, t);
+    "admin", hash("admin"), "admin", "admin", "你好，今天又是新的一天！", 1, 7, 7, t, t);
   run("INSERT INTO users (username,password,nickname,role,greeting_message,level_id,total_watch_seconds,lifetime_watch_seconds,created_at,last_ping_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
     "student", hash("123456"), "小明", "user", "今天也要好好学习呀！", 3, 3720, 3720, t, t);
 
-  const cats = [["未分类", 0], ["音乐", 1], ["编程开发", 2], ["语言学习", 3], ["使用指南", 4]];
-  for (const c of cats) run("INSERT INTO categories (name,sort_order) VALUES (?,?)", ...c);
+  // 分类默认留空，由管理员在「分类管理」中自行创建。
 
   const covers = {
     1: cover("music.svg", ["#1e3a8a", "#312e81"], "♪"),
@@ -66,10 +65,10 @@ function seed() {
   };
 
   const courses = [
-    [1, "【B站2024播放最高的100首歌】每一首都可以单曲循环一整天", "", 2, "manual", 0, "idle", 1, 1, 0],
-    [2, "轻课堂 · 新手指南", "5 分钟了解轻课堂的全部功能", 5, "manual", 0, "idle", 1, 1, 0],
-    [3, "Python 数据分析入门", "从零开始学习 numpy、pandas 与数据可视化", 3, "manual", 0, "idle", 1, 1, 0],
-    [4, "英语听力 · 每日一句", "每天十分钟，磨出英语耳朵", 4, "manual", 0, "idle", 1, 1, 0],
+    [1, "【B站2024播放最高的100首歌】每一首都可以单曲循环一整天", "", null, "manual", 0, "idle", 1, 1, 0],
+    [2, "轻课堂 · 新手指南", "5 分钟了解轻课堂的全部功能", null, "manual", 0, "idle", 1, 1, 0],
+    [3, "Python 数据分析入门", "从零开始学习 numpy、pandas 与数据可视化", null, "manual", 0, "idle", 1, 1, 0],
+    [4, "英语听力 · 每日一句", "每天十分钟，磨出英语耳朵", null, "manual", 0, "idle", 1, 1, 0],
   ];
   for (const [id, title, desc, cat, type, shared, scan, creator, sharedM, hidden] of courses) {
     run("INSERT INTO courses (id,title,description,cover_image,category_id,type,is_shared,scan_status,creator_id,is_materials_shared,is_hidden,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",

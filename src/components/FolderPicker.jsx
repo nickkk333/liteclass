@@ -44,7 +44,6 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
   const current = data?.path || "";
   const entries = data?.entries || [];
   const authorized = data?.authorized || [];
-  const volumes = (data?.roots || []).filter((root) => !authorized.includes(root));
 
   const jump = (event) => {
     event?.preventDefault();
@@ -69,7 +68,7 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
       </>}
     >
       <p className="muted small" style={{ marginTop: -4 }}>
-        选择 NAS 上已挂载到本机的课程目录，创建后会导入其中的音视频与文档。
+        选择 NAS 上已授权给本应用的课程目录，创建后会导入其中的音视频与文档。
       </p>
 
       <div className="picker-path">
@@ -99,13 +98,6 @@ export default function FolderPicker({ initial = "", onClose, onPick }) {
         <div className="picker-section">
           <div className="picker-label"><ShieldCheck size={12} /> 已授权目录</div>
           <div className="picker-roots">{authorized.map((root) => renderRoot(root, true))}</div>
-        </div>
-      )}
-
-      {!!volumes.length && (
-        <div className="picker-section">
-          <div className="picker-label"><HardDrive size={12} /> 存储空间</div>
-          <div className="picker-roots">{volumes.map((root) => renderRoot(root, false))}</div>
         </div>
       )}
 

@@ -31,6 +31,11 @@ const SKIP_NAMES = new Set([
 const skipName = (name) => !name || name.startsWith(".") || name.startsWith("@") || name.startsWith("#") || SKIP_NAMES.has(name);
 const natural = (a, b) => a.localeCompare(b, "zh-CN", { numeric: true, sensitivity: "base" });
 
+// 不把 /vol1 ~ /vol9 这类存储空间根目录当作可选项展示：
+// 课程目录应通过「应用设置 → 授权目录」授权，或直接填写完整路径。
+const VOLUME_ROOT = /^\/vol\d+$/;
+const isVolumeRoot = (value) => VOLUME_ROOT.test(String(value || "").replace(/\\/g, "/"));
+
 /** 浏览某个目录下的子文件夹；同时返回课程来源快捷入口。 */
 export async function listDirs(dir) {
   const roots = mountRoots();
@@ -39,11 +44,12 @@ export async function listDirs(dir) {
   const authorizedSet = new Set(authorized);
 
   if (!dir) {
+    const visibleRoots = roots.filter((p) => !isVolumeRoot(p));
     return {
-      path: "", parent: null, roots, authorized, sources,
+      path: "", parent: null, roots: visibleRoots, authorized, sources,
       entries: [
         ...sources.map((s) => ({ name: s.label, path: s.path, source: true })),
-        ...roots.map((p) => ({ name: p, path: p, authorized: authorizedSet.has(p) })),
+        ...visibleRoots.map((p) => ({ name: p, path: p, authorized: authorizedSet.has(p) })),
       ],
     };
   }
@@ -72,6 +78,7 @@ export async function listDirs(dir) {
           const full = pJoin(target, e.name);
           return { name: e.name, path: full, authorized: authorizedSet.has(full) };
         })
+        .filter((e) => !isVolumeRoot(e.path))
         .sort((a, b) => natural(a.name, b.name))
         .slice(0, 500),
     };
