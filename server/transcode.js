@@ -144,12 +144,21 @@ const canStreamHLS = (facts) => !!facts?.video && facts.duration > 0 && !!binari
 export async function mediaStatus(target, { materialId, token = "", hls = true } = {}) {
   const base = { mode: "raw", ready: true, preparing: false, hls_ready: false, needs_reencode: false };
   if (!target || target.remote) return { ...base, remote: !!target?.remote };
-  if (setting("enable_transcoding", "true") === "false") return base;
-  if (!ffmpegAvailable()) return base;
+
+  // 原生可播的文件始终直连，不受转码开关影响。
   const stat = await fileStat(target);
   const facts = await probe(target.path);
+  const playable = browserPlayable(facts);
+  if (playable) return { ...base, mode: "direct", mime: playable };
+  const info = facts
+    ? { duration: facts.duration, video_codec: facts.video?.codec || "", audio_codec: facts.audio?.codec || "", needs_transcode: true }
+    : {};
+  if (setting("enable_transcoding", "true") === "false") {
+    return facts ? { ...base, ...info, transcoding_disabled: true } : base;
+  }
+  if (!ffmpegAvailable()) return facts ? { ...base, ...info, ffmpeg_missing: true } : base;
   if (!facts) return base;
-  if (browserPlayable(facts)) return { ...base, mode: "direct", mime: browserPlayable(facts) };
+
   const key = cacheKey(target, stat);
   const needsReencode = !!facts.video && !HLS_VIDEO_CODECS.has(facts.video.codec);
   const common = { duration: facts.duration, video_codec: facts.video?.codec || "", needs_reencode: needsReencode };

@@ -12,7 +12,7 @@
 - 课程详情：音视频播放、播放进度记忆、倍速/循环/音量、章节目录、笔记（带时间点跳转）、资料下载、讨论与回复
 - **文件支持**（与 OfflineU 对齐）：视频 `mp4/mkv/avi/mov/webm/m4v/flv/wmv/ts/m2ts/mts`、音频 `mp3/wav/m4a/aac/ogg/flac`、图片 `png/jpg/jpeg/gif/webp/bmp/svg/ico/avif`、文档 `txt/md/html/htm/pdf/docx/doc/rtf/mhtml/mht`；`.txt` 纯文本、`.md` 排版渲染、`.pdf`/`.html` 内嵌、Office 与网页存档由服务端转成无脚本 HTML 后内联预览，图片直接显示，`.epub` 等其它格式可下载
 - **字幕**：与音视频同名的 `srt/vtt/ass/ssa/sub/sbv` 自动挂载，服务端统一转成 WebVTT
-- **ffmpeg HLS / remux 转码**（复制自 OfflineU）：`/api/media/status` 按真实容器与编码判定 `direct / hls / remux / raw`；视频按 6 秒关键帧切 MPEG-TS 分片，用 `hls.js` 播放（Safari 原生），失败自动回退；纯音频或缺少 ffprobe 时后台重封装 / 转码成 MP4，就绪后自动替换原文件；结果缓存在 `data/cache`，按容量清理
+- **ffmpeg HLS / remux 转码**（复制自 OfflineU）：安装包内置 Linux x64 静态 `ffmpeg` / `ffprobe`，`/api/media/status` 按真实容器与编码判定 `direct / hls / remux / raw`；视频按关键帧切 MPEG-TS 分片，用 `hls.js` 播放（Safari 原生），失败自动回退；MKV / E-AC3 / DTS 等浏览器不支持的音轨统一转成 AAC，避免「有画面没声音」；结果缓存在 `data/cache`，按容量清理
 - **DLNA 投屏**：SSDP 发现电视、SOAP 推送/播放/暂停/跳转/停止，服务端单会话看门狗回写进度并自动连播下一节，兼容模式提供 ffmpeg 实时 MPEG-TS 流；全局投屏条可跨页面控制
 - **课程来源**：本地目录 / WebDAV / SMB 共享，密码只写不读，虚拟路径 `/__liteclass_sources__/<id>/...`，可测试连接并直接作为课程打开
 - 播放结束按「顺序播放 / 单曲循环 / 播完暂停」处理，顺序模式自动续播下一章；已学完章节在目录中显示对勾
@@ -66,16 +66,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.5_x86.fpk
+release/liteclass_1.0.6_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.5_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.6_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.5_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.6_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。
@@ -156,7 +156,7 @@ release/            打包产物（.fpk，已加入 .gitignore）
 | `LITECLASS_SECRET` | 内置开发密钥 | JWT 签名密钥，生产环境请务必修改 |
 | `LITECLASS_MOUNT_ROOTS` | 自动探测 | 允许挂载/浏览的根目录，多个用分隔符隔开（Windows 用 `;`，Linux/macOS 用 `:`） |
 | `LITECLASS_DATA_DIR` | 项目内 `data/` | 数据目录覆盖；fpk 安装包会把它指向 `$TRIM_PKGVAR/data` |
-| `LITECLASS_FFMPEG` / `LITECLASS_FFPROBE` | 自动查找 `PATH` | 显式指定可执行文件；找不到时转码/投屏流自动降级为原始流（不自动下载） |
+| `LITECLASS_FFMPEG` / `LITECLASS_FFPROBE` | 内置静态版本 | 显式指定其他 ffmpeg/ffprobe；留空时优先使用 `runtime/bin` 内置版本，其次查找 `PATH` 与 fnOS 自带的 `/usr/trim/lib/mediasrv` |
 | `LITECLASS_CACHE_DIR` | `data/cache` | HLS 分片与 remux MP4 缓存目录 |
 | `LITECLASS_CACHE_LIMIT_GB` | `20` | 缓存上限；超过后删除最旧文件，最近 2 分钟内的文件受保护 |
 | `LITECLASS_TRANSCODE_HEIGHT` / `_PRESET` / `_CRF` | `720` / `veryfast` / `23` | 重编码时的分辨率上限与 x264 参数 |
@@ -177,7 +177,7 @@ release/            打包产物（.fpk，已加入 .gitignore）
 
 ### ffmpeg 转码与播放
 
-- 需要先在 NAS / 服务器上安装 `ffmpeg` 与 `ffprobe`，或用 `LITECLASS_FFMPEG`、`LITECLASS_FFPROBE` 指定路径。fpk 的 Node 运行时不含 ffmpeg，也不会自动下载；**找不到时所有功能自动降级为原始流**，不影响原有播放。
+- fpk 安装包已内置 Linux x64 静态 `ffmpeg` 与 `ffprobe`（位于 `runtime/bin`），无需在 NAS 上另装；也可以用 `LITECLASS_FFMPEG`、`LITECLASS_FFPROBE` 指定其他版本。只有两者都找不到时才会降级为原始流。
 - 打开章节时先请求 `/api/media/status/:id`：浏览器原生可播 → `direct`；有视频且能用关键帧切片 → `hls`（前端按需加载 `hls.js`）；纯音频 / 无 ffprobe → 后台 `remux` 成 MP4，就绪后自动重载；远程来源或设置关闭转码 → `raw`。HLS 分片未就绪返回 `503`，前端每 2 秒重试；播放失败自动 `hls=0` 回退。
 - 缓存按「路径 + 大小 + 修改时间」隔离，源文件变化即失效；HLS 索引与分片、remux MP4 都在 `data/cache`，由 `LITECLASS_CACHE_LIMIT_GB` 控制容量。
 
@@ -196,7 +196,7 @@ release/            打包产物（.fpk，已加入 .gitignore）
 
 ## 说明
 
-- 音视频播放支持 HTTP Range，可拖动进度条；上传的音视频保存在 `data/uploads/`。浏览器无法解码的容器（如 `mkv / avi / flv / wmv`）由服务端 HLS/remux 转码（需 ffmpeg），没有 ffmpeg 时原样提供并可下载。
+- 音视频播放支持 HTTP Range，可拖动进度条；上传的音视频保存在 `data/uploads/`。浏览器无法解码的容器（如 `mkv / avi / flv / wmv`）由服务端 HLS/remux 转码，安装包内置 ffmpeg；E-AC3 / AC3 / DTS 音轨会转成 AAC，避免浏览器有画面无声音。
 - `.txt / .md / .html / .pdf / .docx / .doc / .rtf / .mhtml` 在课程详情与放映厅内联预览：服务端把文档转成无脚本 HTML（单文件上限 8 MB）；本地 HTML 的同目录资源内联成 data URL，课程来源 HTML 的相对资源由服务端 asset 路由代理；PDF/HTML 由浏览器内嵌显示；其它格式可下载原文件。
 - 数据库与上传目录均位于项目根目录 `data/`，备份该目录即可保留全部数据。
 - 放映厅聊天为实时消息，不写入数据库；房间播放状态会持久化。

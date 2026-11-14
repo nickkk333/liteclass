@@ -34,6 +34,13 @@ jobs:
           curl -fsSL "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.xz" \
             -o "fnos/.cache/node-v24.20.0-linux-x64.tar.xz"
 
+      - name: Prepare static ffmpeg
+        run: |
+          mkdir -p fnos/.cache
+          curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" \
+            -o "fnos/.cache/ffmpeg-release-amd64-static.tar.xz"
+
       - name: Build fpk
         run: node fnos/build.mjs
 

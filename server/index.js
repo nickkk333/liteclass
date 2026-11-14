@@ -15,6 +15,7 @@ import streamRoutes from "./stream.js";
 import mediaRoutes from "./routes/media.js";
 import dlnaRoutes from "./routes/dlna.js";
 import sourcesRoutes from "./routes/sources.js";
+import { binaries } from "./ffmpeg.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -60,4 +61,7 @@ attachRooms(server);
 server.listen(PORT, () => {
   console.log(`轻课堂 Lite Class running at http://localhost:${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
+  const { ffmpeg, ffprobe } = binaries();
+  console.log(`ffmpeg: ${ffmpeg || "未找到（视频转码不可用）"}`);
+  console.log(`ffprobe: ${ffprobe || "未找到（将退回 ffmpeg -i 探测）"}`);
 });

@@ -66,7 +66,9 @@ export default function SettingsView({ onBack }) {
             <Switch checked={!!settings.enable_transcoding} onChange={(v) => update({ enable_transcoding: v })} />
           </div>
           <div className="desc" style={{ padding: "0 14px 12px" }}>
-            需要服务端安装 ffmpeg / ffprobe（或设置 <code>LITECLASS_FFMPEG</code>、<code>LITECLASS_FFPROBE</code>）；未找到时自动回退为原始流。
+            安装包已内置 ffmpeg / ffprobe，可直接把 MKV、E-AC3、DTS 等浏览器不支持的音轨转成 H.264 + AAC；
+            也可以通过 <code>LITECLASS_FFMPEG</code>、<code>LITECLASS_FFPROBE</code> 指定其他版本
+            {settings.ffmpeg_available === false ? "（当前未检测到，转码不可用）" : ""}。
             转码缓存位于 <code>data/cache</code>，可用 <code>LITECLASS_CACHE_LIMIT_GB</code> 限制容量。
             DLNA 投屏可用 <code>LITECLASS_DLNA=off</code> 关闭。
           </div>

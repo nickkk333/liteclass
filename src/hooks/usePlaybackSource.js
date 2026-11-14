@@ -9,7 +9,7 @@ const HLS_RETRY_DELAY = 5000;
 const POLL_INTERVAL = 2000;
 
 export default function usePlaybackSource({ mediaRef, materialId, enabled, streamUrl, autoPlayRef }) {
-  const [state, setState] = useState({ mode: "direct", preparing: false, error: "" });
+  const [state, setState] = useState({ mode: "direct", preparing: false, error: "", notice: "" });
   const [reload, setReload] = useState(0);
   const hlsRef = useRef(null);
   const pollRef = useRef(null);
@@ -129,7 +129,12 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
         }
         return;
       }
-      setState({ mode: s.mode || "direct", preparing: false, error: "" });
+      setState({ mode: s.mode || "direct", preparing: false, error: "",
+        notice: s.transcoding_disabled
+          ? "该文件的音轨/容器浏览器无法直接播放，请到「管理 → 设置」开启视频转码。"
+          : s.ffmpeg_missing
+            ? "服务端未找到 ffmpeg，无法转换该视频的音轨（可能出现有画面无声音）。"
+            : "" });
     };
 
     const fallback = async () => {
@@ -154,5 +159,6 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     preparing: state.preparing,
     mode: state.mode,
     error: state.error,
+    notice: state.notice || "",
   };
 }

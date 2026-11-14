@@ -4,10 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { all, get, run, now, publicSettings, setSetting, setting } from "../db.js";
 import { requireAuth, requireAdmin } from "../auth.js";
+import { ffmpegAvailable } from "../ffmpeg.js";
 
 const router = Router();
 
-router.get("/settings", requireAuth, requireAdmin, (req, res) => res.json({ ...publicSettings(), version: setting("version", "1.1.6") }));
+router.get("/settings", requireAuth, requireAdmin, (req, res) =>
+  res.json({ ...publicSettings(), version: setting("version", "1.1.6"), ffmpeg_available: ffmpegAvailable() }));
 
 router.put("/settings", requireAuth, requireAdmin, (req, res) => {
   const allowed = ["allow_registration", "allow_course_creation", "max_material_size", "max_course_size",

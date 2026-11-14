@@ -30,6 +30,11 @@ const NODE_TARBALL = path.join(CACHE, `node-v${NODE_VERSION}-linux-x64.tar.xz`);
 const NODE_EXTRACTED = path.join(CACHE, "node-linux", "bin", "node");
 const NODE_LICENSE = path.join(CACHE, "node-linux", "LICENSE");
 
+// 静态 ffmpeg / ffprobe：用于 MKV、E-AC3、DTS 等浏览器不支持的音视频转码。
+const FFMPEG_TARBALL = path.join(CACHE, "ffmpeg-release-amd64-static.tar.xz");
+const FFMPEG_EXTRACTED = path.join(CACHE, "ffmpeg-linux");
+const FFMPEG_URL = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+
 const BLOCK = 512;
 
 function log(msg) {
@@ -159,6 +164,42 @@ function ensureNodeRuntime() {
   }
 }
 
+function ensureFfmpegRuntime() {
+  const ffmpeg = path.join(FFMPEG_EXTRACTED, "ffmpeg");
+  const ffprobe = path.join(FFMPEG_EXTRACTED, "ffprobe");
+  if (!fs.existsSync(ffmpeg) || !fs.existsSync(ffprobe)) {
+    if (!fs.existsSync(FFMPEG_TARBALL)) {
+      log(`未找到 ${FFMPEG_TARBALL}，请先下载：`);
+      log(FFMPEG_URL);
+      process.exit(1);
+    }
+    log("解压 ffmpeg / ffprobe ...");
+    const tmp = path.join(CACHE, "ffmpeg-extract");
+    rmrf(tmp);
+    fs.mkdirSync(tmp, { recursive: true });
+    run("tar", ["-xf", FFMPEG_TARBALL, "-C", tmp]);
+    const root = fs.readdirSync(tmp)
+      .map((name) => path.join(tmp, name))
+      .find((full) => { try { return fs.statSync(full).isDirectory(); } catch { return false; } });
+    if (!root) throw new Error("ffmpeg 压缩包结构异常");
+    rmrf(FFMPEG_EXTRACTED);
+    fs.mkdirSync(FFMPEG_EXTRACTED, { recursive: true });
+    for (const name of ["ffmpeg", "ffprobe", "GPLv3.txt", "README.txt"]) {
+      const src = path.join(root, name);
+      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(FFMPEG_EXTRACTED, name));
+    }
+    rmrf(tmp);
+  }
+  for (const name of ["ffmpeg", "ffprobe"]) {
+    const file = path.join(FFMPEG_EXTRACTED, name);
+    if (!fs.existsSync(file)) throw new Error(`缺少 ffmpeg 运行时：${name}`);
+    const header = fs.readFileSync(file).subarray(0, 4);
+    if (header.toString("latin1") !== "\x7fELF") {
+      throw new Error(`${name} 不是 Linux ELF 可执行文件`);
+    }
+  }
+}
+
 function main() {
   const manifest = readManifest();
   log(`打包 ${manifest.appname} ${manifest.version} (${manifest.platform})`);
@@ -191,13 +232,23 @@ function main() {
   fs.copyFileSync(NODE_EXTRACTED, path.join(APP_DIR, "runtime", "bin", "node"));
   fs.copyFileSync(NODE_LICENSE, path.join(APP_DIR, "runtime", "LICENSE"));
 
+  log("写入 ffmpeg / ffprobe ...");
+  ensureFfmpegRuntime();
+  for (const name of ["ffmpeg", "ffprobe"]) {
+    fs.copyFileSync(path.join(FFMPEG_EXTRACTED, name), path.join(APP_DIR, "runtime", "bin", name));
+  }
+  for (const name of ["GPLv3.txt", "README.txt"]) {
+    const src = path.join(FFMPEG_EXTRACTED, name);
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(APP_DIR, "runtime", `FFMPEG-${name}`));
+  }
+
   log("生成 app.tgz ...");
   const appEntries = walkFiles(APP_DIR);
   for (const entry of appEntries) {
     if (entry.type === "0") {
       entry.data = fs.readFileSync(entry.file);
       delete entry.file;
-      if (entry.name === "runtime/bin/node") entry.mode = 0o755;
+      if (entry.name.startsWith("runtime/bin/")) entry.mode = 0o755;
     }
   }
   const appTgz = tarGz(appEntries);

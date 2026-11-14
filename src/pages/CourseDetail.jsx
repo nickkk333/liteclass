@@ -434,6 +434,7 @@ export default function CourseDetail() {
                   </div>
                 )}
                 {playback.error ? <div className="media-error">{playback.error}</div> : null}
+                {playback.notice ? <div className="media-notice">{playback.notice}</div> : null}
                 {mediaFailed && (
                   <div className="media-error">
                     <span>浏览器无法直接播放该格式，可下载后用本地播放器打开</span>
@@ -468,6 +469,7 @@ export default function CourseDetail() {
                 </div>
                 {playback.preparing ? <div className="subtitle-hint small muted">正在准备可播音源…</div> : null}
                 {playback.error ? <div className="subtitle-hint small">{playback.error}</div> : null}
+                {playback.notice ? <div className="subtitle-hint small muted">{playback.notice}</div> : null}
                 {(mediaFailed || current.has_subtitle) && (
                   <div className="subtitle-hint small muted">
                     <FileText size={13} /> {mediaFailed ? "浏览器无法播放该音频，可下载后播放" : "本音频包含字幕"}
