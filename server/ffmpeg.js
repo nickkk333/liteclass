@@ -250,36 +250,63 @@ export function formatOffset(seconds) {
   return Math.max(0, Number(seconds) || 0).toFixed(3);
 }
 
+/** 关键帧对齐的前置留量（秒）。见 segmentArgs 的说明。 */
+const SEGMENT_SEEK_MARGIN = 0.5;
+
 /** 生成单个 HLS MPEG-TS 分片（按索引里的关键帧或固定 6 秒网格切）。
  *
- * 关键点（踩过的坑）：
- * 1. `-ss` 必须精确到毫秒。取整到秒会退到上一个关键帧，视频多出前一片的内容。
- * 2. 输入 `-ss` 对 MKV 只能落到簇/关键帧之前，所以再加一次输出侧 `-ss 0`，
- *    把目标时间点之前的多余帧丢掉，保证每片以关键帧开头。
- * 3. 每片都要用 `-output_ts_offset <start>` 还原绝对时间戳；否则每片都从 0 开始，
+ * 这里每个细节都是踩坑换来的，改动前请先跑一遍真实影片验证：
+ * 1. `-ss` 必须精确到毫秒。取整到秒会退到上一个关键帧，分片里混进上片内容。
+ * 2. 流复制（`-c:v copy`）时 ffmpeg 只能从关键帧起播：`-ss` 会落到关键帧之前的簇，
+ *    再由输出侧 `-ss 0` 把「起点之后」的帧保留下来。此时时间戳被重排到 0，
+ *    关键帧自身的 DTS 会比 PTS 小一帧（B 帧），于是一刀切在关键帧上时该关键帧
+ *    会被当成负时间戳丢掉，整片视频晚 1~2 秒 —— 音画就是这么错位的。
+ *    因此输入 `-ss` 提前 0.5s，保证目标关键帧的 DTS 落在正区间，
+ *    再把多出来的音轨用 atrim 裁掉。
+ * 3. `-t` 要把留量算进去，否则每片尾部少 0.5s，播放到分片边界会卡顿/丢音。
+ * 4. 每片都用 `-output_ts_offset <seek>` 还原绝对时间戳；否则每片都从 0 开始，
  *    Chrome 的 MSE 会报 CHUNK_DEMUXER_ERROR_APPEND_FAILED（DTS 不连续）。
- *    `-avoid_negative_ts make_zero` 会二次平移时间戳，音画错位，必须改成 disabled。 */
+ *    `-avoid_negative_ts make_zero` 会二次平移时间戳，音画错位，必须改成 disabled。
+ * 5. 首片（start=0）不能用上面的 seek：文件开头的关键帧本身 DTS 就是负/缺失，
+ *    加了 seek 反而丢掉前 2 秒，所以首片直接从头解，用 make_zero 归零即可。 */
 export function segmentArgs(file, facts, segment, output) {
   const start = Math.max(0, Number(segment.start) || 0);
-  const args = [
-    "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-ss", formatOffset(start),
-    "-i", file,
-    "-ss", "0",
-    "-t", Number(segment.duration).toFixed(3),
-    "-sn", "-dn", "-map_metadata", "-1",
-    "-map", "0:v:0?", "-map", "0:a:0?",
-  ];
+  const duration = Math.max(0.05, Number(segment.duration) || 0);
+  const args = ["-hide_banner", "-loglevel", "error", "-nostdin"];
+  let seek = 0;
+  let margin = 0;
+  if (start > 0.001) {
+    seek = start;
+    if (copyVideo(facts)) {
+      margin = Math.min(SEGMENT_SEEK_MARGIN, Math.max(0.1, duration / 4));
+      seek = Math.max(0, start - margin);
+    }
+    args.push("-ss", formatOffset(seek));
+  }
+  args.push("-i", file, "-sn", "-dn", "-map_metadata", "-1", "-map", "0:v:0?", "-map", "0:a:0?");
+  if (margin > 0) {
+    args.push("-ss", "0", "-t", formatOffset(duration + margin));
+  } else {
+    if (seek > 0) args.push("-ss", "0");
+    args.push("-t", formatOffset(duration));
+  }
+  // atrim 需要编码，所以有留量时音轨统一转 AAC（HLS 只用于视频，代价可以忽略）。
+  const reencodeAudio = margin > 0 || !copyAudio(facts);
   if (facts?.video) {
     args.push(...(copyVideo(facts) ? ["-c:v", "copy"] : videoEncodeArgs(facts)));
-    if (facts.audio) args.push(...(copyAudio(facts) ? ["-c:a", "copy"] : audioEncodeArgs()));
+    if (facts.audio) {
+      args.push(...(reencodeAudio ? audioEncodeArgs() : ["-c:a", "copy"]));
+      if (margin > 0) args.push("-af", `atrim=start=${formatOffset(margin)},aresample=async=1`);
+    }
   } else {
-    args.push(...(copyAudio(facts) ? ["-c:a", "copy"] : audioEncodeArgs()));
+    args.push(...(reencodeAudio ? audioEncodeArgs() : ["-c:a", "copy"]));
   }
-  args.push(
-    "-avoid_negative_ts", "disabled", "-output_ts_offset", formatOffset(start),
-    "-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-y", output,
-  );
+  if (seek > 0) {
+    args.push("-avoid_negative_ts", "disabled", "-output_ts_offset", formatOffset(seek));
+  } else {
+    args.push("-avoid_negative_ts", "make_zero");
+  }
+  args.push("-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-y", output);
   return args;
 }
 

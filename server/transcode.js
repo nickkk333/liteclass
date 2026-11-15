@@ -37,7 +37,7 @@ const cacheKey = (target, stat) => sha(`${path.resolve(target.path)}|${stat.size
 const browserFile = (key) => path.join(BROWSER_DIR, `${key}.mp4`);
 // 分片格式版本：改动 segmentArgs（时间戳/切片方式）后必须 +1，
 // 让旧格式的 index.json 与已缓存分片全部失效（目录带版本号）。
-const HLS_INDEX_VERSION = 2;
+const HLS_INDEX_VERSION = 3;
 const hlsDir = (key) => path.join(HLS_DIR, `${key}-v${HLS_INDEX_VERSION}`);
 const indexFile = (key) => path.join(hlsDir(key), "index.json");
 const segmentFile = (key, i) => path.join(hlsDir(key), `seg_${String(i).padStart(5, "0")}.ts`);
