@@ -16,6 +16,8 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
   const retryRef = useRef(0);
   const timerRef = useRef(null);
   const seqRef = useRef(0);
+  const fallbackRef = useRef(() => {});
+  const fallbackingRef = useRef(false);
 
   const clearTimers = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -27,6 +29,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     const seq = ++seqRef.current;
     clearTimers();
     retryRef.current = 0;
+    fallbackingRef.current = false;
     if (!enabled || !materialId) {
       setState({ mode: "direct", preparing: false, error: "" });
       return undefined;
@@ -138,11 +141,14 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     };
 
     const fallback = async () => {
+      if (!alive() || fallbackingRef.current) return;
+      fallbackingRef.current = true;
       clearTimers();
       if (!alive()) return;
       try { await applyStatus(await status(false), false); }
       catch { setState({ mode: "direct", preparing: false, error: "" }); }
     };
+    fallbackRef.current = fallback;
 
     setState({ mode: "loading", preparing: true, error: "" });
     status().then((s) => applyStatus(s)).catch(() => setState({ mode: "direct", preparing: false, error: "" }));
@@ -160,5 +166,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     mode: state.mode,
     error: state.error,
     notice: state.notice || "",
+    // HLS 播放失败（MSE 追加失败 / 解码错误）时由页面调用：改走后端 MP4 重封装。
+    fallback: () => fallbackRef.current(),
   };
 }

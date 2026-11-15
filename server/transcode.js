@@ -35,7 +35,10 @@ function runJob(key, fn) {
 const sha = (text) => crypto.createHash("sha1").update(text).digest("hex");
 const cacheKey = (target, stat) => sha(`${path.resolve(target.path)}|${stat.size}|${stat.mtimeMs}`);
 const browserFile = (key) => path.join(BROWSER_DIR, `${key}.mp4`);
-const hlsDir = (key) => path.join(HLS_DIR, key);
+// 分片格式版本：改动 segmentArgs（时间戳/切片方式）后必须 +1，
+// 让旧格式的 index.json 与已缓存分片全部失效（目录带版本号）。
+const HLS_INDEX_VERSION = 2;
+const hlsDir = (key) => path.join(HLS_DIR, `${key}-v${HLS_INDEX_VERSION}`);
 const indexFile = (key) => path.join(hlsDir(key), "index.json");
 const segmentFile = (key, i) => path.join(hlsDir(key), `seg_${String(i).padStart(5, "0")}.ts`);
 
@@ -49,7 +52,7 @@ async function atomicWrite(file, data) {
 async function indexFor(key, stat) {
   try {
     const idx = JSON.parse(await fsp.readFile(indexFile(key), "utf8"));
-    if (idx.version === 1 && idx.size === stat.size && idx.mtime === stat.mtimeMs && Array.isArray(idx.segments) && idx.segments.length) return idx;
+    if (idx.version === HLS_INDEX_VERSION && idx.size === stat.size && idx.mtime === stat.mtimeMs && Array.isArray(idx.segments) && idx.segments.length) return idx;
   } catch {}
   return null;
 }
@@ -88,7 +91,7 @@ async function buildIndex(target, stat, facts, key) {
     segments = fixedGrid(facts.duration);
   }
   await atomicWrite(indexFile(key), JSON.stringify({
-    version: 1, size: stat.size, mtime: stat.mtimeMs, duration: facts.duration,
+    version: HLS_INDEX_VERSION, size: stat.size, mtime: stat.mtimeMs, duration: facts.duration,
     copy_video: copyVideo, segments,
   }));
 }
@@ -190,6 +193,7 @@ export async function hlsPlaylist(target, materialId, token = "") {
   const maxDuration = Math.max(...idx.segments.map((s) => s.duration));
   const lines = [
     "#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-MEDIA-SEQUENCE:0",
+    "#EXT-X-INDEPENDENT-SEGMENTS",
     `#EXT-X-TARGETDURATION:${Math.ceil(maxDuration)}`,
   ];
   idx.segments.forEach((segment, i) => {

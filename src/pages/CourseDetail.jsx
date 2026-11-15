@@ -123,6 +123,11 @@ export default function CourseDetail() {
     stateRef.current = { currentId, playing, time };
   }, [currentId, playing, time]);
 
+  // 切换播放源（HLS → 重封装、换章节）时清掉上一轮的播放失败标记。
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [playback.elementKey, playback.src, playback.mode]);
+
   const report = (materialId, position, dur) => {
     if (!materialId) return;
     api("/progress", { method: "POST", body: { material_id: materialId, position, duration: dur } }).catch(() => {});
@@ -240,6 +245,13 @@ export default function CourseDetail() {
     setMediaFailed(false);
     // 文档、图片、PDF 没有播放进度：打开即记录为已学完
     if (!isTimed) report(m.id, 1, 1);
+  };
+
+  const onMediaError = () => {
+    // HLS 在 Chrome 里可能因分片时间戳问题让 MSE 追加失败：自动退回 MP4 重封装，
+    // 只有重封装也不可用时才提示「无法直接播放」。
+    if (playback.mode === "hls") { playback.fallback(); return; }
+    setMediaFailed(true);
   };
 
   const onLoadedMetadata = () => {
@@ -422,7 +434,7 @@ export default function CourseDetail() {
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
                   onEnded={(e) => handleEnded(e.currentTarget)}
-                  onError={() => setMediaFailed(true)}
+                  onError={onMediaError}
                 >
                   {current.has_subtitle ? (
                     <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
@@ -435,7 +447,7 @@ export default function CourseDetail() {
                 )}
                 {playback.error ? <div className="media-error">{playback.error}</div> : null}
                 {playback.notice ? <div className="media-notice">{playback.notice}</div> : null}
-                {mediaFailed && (
+                {mediaFailed && !playback.preparing && (
                   <div className="media-error">
                     <span>浏览器无法直接播放该格式，可下载后用本地播放器打开</span>
                     <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download><Download size={14} /> 下载后播放</a>
@@ -634,7 +646,7 @@ export default function CourseDetail() {
                   if (el) report(current.id, el.currentTime, el.duration || 0);
                 }}
                 onEnded={() => handleEnded(audioRef.current)}
-                onError={() => setMediaFailed(true)}
+                onError={onMediaError}
               >
                 {current.has_subtitle ? (
                   <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />

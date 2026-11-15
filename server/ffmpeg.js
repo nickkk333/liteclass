@@ -245,11 +245,30 @@ export function remuxArgs(file, facts, output) {
   return args;
 }
 
-/** 生成单个 HLS MPEG-TS 分片（按索引里的关键帧或固定 6 秒网格切）。 */
+/** 秒 → ffmpeg 时间参数，保留毫秒（HLS 分片必须精确到关键帧）。 */
+export function formatOffset(seconds) {
+  return Math.max(0, Number(seconds) || 0).toFixed(3);
+}
+
+/** 生成单个 HLS MPEG-TS 分片（按索引里的关键帧或固定 6 秒网格切）。
+ *
+ * 关键点（踩过的坑）：
+ * 1. `-ss` 必须精确到毫秒。取整到秒会退到上一个关键帧，视频多出前一片的内容。
+ * 2. 输入 `-ss` 对 MKV 只能落到簇/关键帧之前，所以再加一次输出侧 `-ss 0`，
+ *    把目标时间点之前的多余帧丢掉，保证每片以关键帧开头。
+ * 3. 每片都要用 `-output_ts_offset <start>` 还原绝对时间戳；否则每片都从 0 开始，
+ *    Chrome 的 MSE 会报 CHUNK_DEMUXER_ERROR_APPEND_FAILED（DTS 不连续）。
+ *    `-avoid_negative_ts make_zero` 会二次平移时间戳，音画错位，必须改成 disabled。 */
 export function segmentArgs(file, facts, segment, output) {
+  const start = Math.max(0, Number(segment.start) || 0);
   const args = [
-    ...commonInput(file, segment.start),
+    "-hide_banner", "-loglevel", "error", "-nostdin",
+    "-ss", formatOffset(start),
+    "-i", file,
+    "-ss", "0",
     "-t", Number(segment.duration).toFixed(3),
+    "-sn", "-dn", "-map_metadata", "-1",
+    "-map", "0:v:0?", "-map", "0:a:0?",
   ];
   if (facts?.video) {
     args.push(...(copyVideo(facts) ? ["-c:v", "copy"] : videoEncodeArgs(facts)));
@@ -257,7 +276,10 @@ export function segmentArgs(file, facts, segment, output) {
   } else {
     args.push(...(copyAudio(facts) ? ["-c:a", "copy"] : audioEncodeArgs()));
   }
-  args.push("-avoid_negative_ts", "make_zero", "-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-y", output);
+  args.push(
+    "-avoid_negative_ts", "disabled", "-output_ts_offset", formatOffset(start),
+    "-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-y", output,
+  );
   return args;
 }
 
