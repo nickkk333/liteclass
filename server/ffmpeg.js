@@ -86,6 +86,27 @@ export function binaries() {
 
 export const ffmpegAvailable = () => !!binaries().ffmpeg;
 
+// 浏览器 <track> 能用的文本字幕；PGS / DVD 等图形字幕无法转成 WebVTT。
+export const TEXT_SUBTITLE_CODECS = new Set([
+  "subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text", "sami",
+  "microdvd", "subviewer", "subviewer1", "jacosub", "realtext", "lrc",
+  "pjs", "mpl2", "vplayer", "stl",
+]);
+
+function subtitleTrack(stream) {
+  const codec = String(stream.codec_name || "").toLowerCase();
+  const tags = stream.tags || {};
+  return {
+    index: Number(stream.index),
+    codec,
+    lang: String(tags.language || "").toLowerCase(),
+    title: String(tags.title || ""),
+    default: !!stream.disposition?.default,
+    forced: !!stream.disposition?.forced,
+    text: TEXT_SUBTITLE_CODECS.has(codec),
+  };
+}
+
 // 探测缓存：路径 + size + mtime；失败结果也缓存，避免拖动进度条时反复 ffprobe。
 const probeCache = new Map();
 export async function probe(file) {
@@ -112,6 +133,7 @@ export async function probe(file) {
           duration: Number(data.format?.duration) || 0,
           video: v ? { codec: String(v.codec_name || "").toLowerCase(), height: Number(v.height) || 0 } : null,
           audio: a ? { codec: String(a.codec_name || "").toLowerCase() } : null,
+          subtitles: streams.filter((s) => s.codec_type === "subtitle").map(subtitleTrack),
         };
       }
     } catch {}
@@ -146,11 +168,28 @@ export function parseFfmpegProbe(stderr) {
   const aline = /(Stream #\S+.*?:\s*Audio:\s*([A-Za-z0-9_]+).*)/.exec(stderr);
   if (!vline && !aline) return null;
   const dim = vline ? /(\d{2,5})x(\d{2,5})/.exec(vline[1]) : null;
+  // 字幕轨：Stream #0:2(chi): Subtitle: subrip (srt) (default)
+  const subtitles = [];
+  const re = /Stream #\S*?:(\d+)(?:[\[(]([^\])]*)[\])])?[^:]*:\s*Subtitle:\s*([A-Za-z0-9_]+)(.*)/g;
+  let m;
+  while ((m = re.exec(stderr))) {
+    const codec = String(m[3]).toLowerCase();
+    subtitles.push({
+      index: Number(m[1]),
+      codec,
+      lang: String(m[2] || "").toLowerCase(),
+      title: "",
+      default: /\(default\)/i.test(m[4]),
+      forced: /\(forced\)/i.test(m[4]),
+      text: TEXT_SUBTITLE_CODECS.has(codec),
+    });
+  }
   return {
     container: input ? String(input[1]).trim().toLowerCase() : "",
     duration: dur ? Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]) : 0,
     video: vline ? { codec: String(vline[2]).toLowerCase(), height: dim ? Number(dim[2]) || 0 : 0 } : null,
     audio: aline ? { codec: String(aline[2]).toLowerCase() } : null,
+    subtitles,
   };
 }
 

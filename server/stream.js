@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import { Router } from "express";
 import { get, UPLOAD_DIR } from "./db.js";
 import { currentUser } from "./auth.js";
@@ -13,6 +15,7 @@ import { convertSubtitleToVTT, subtitleText } from "./subtitles.js";
 import { resolveMaterialFile, fileStat, openRange, readCappedFile, readSibling } from "./files.js";
 import { serveBrowser } from "./transcode.js";
 import { validCastToken } from "./dlna.js";
+import { probe, ffmpegRun, CACHE_DIR } from "./ffmpeg.js";
 
 const router = Router();
 
@@ -236,6 +239,115 @@ router.get("/subtitles/:id", async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, max-age=300");
   res.send(text);
+});
+
+// 内嵌字幕抽成 WebVTT 后缓存到 CACHE_DIR/subtitles（按文件 size+mtime+轨道号失效）。
+const SUBTITLE_CACHE_DIR = path.join(CACHE_DIR, "subtitles");
+const subtitleJobs = new Map();
+
+function subtitleCacheFile(target, stat, index) {
+  const key = crypto.createHash("sha1")
+    .update(`${path.resolve(target.path)}|${stat.size}|${stat.mtimeMs}|${index}`)
+    .digest("hex");
+  return path.join(SUBTITLE_CACHE_DIR, `${key}.vtt`);
+}
+
+/** ffmpeg 把内嵌文本字幕轨转成 WebVTT；同一轨并发请求合并成一次转换。 */
+function extractEmbeddedSubtitle(source, index, output) {
+  if (subtitleJobs.has(output)) return subtitleJobs.get(output);
+  const task = (async () => {
+    await fsp.mkdir(SUBTITLE_CACHE_DIR, { recursive: true });
+    const tmp = `${output}.${process.pid}.tmp.vtt`;
+    try {
+      await ffmpegRun([
+        "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-i", source, "-map", `0:${index}`, "-c:s", "webvtt", "-f", "webvtt", tmp,
+      ], 5 * 60 * 1000);
+      const text = await fsp.readFile(tmp, "utf8");
+      await fsp.rename(tmp, output);
+      return text;
+    } finally {
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+    }
+  })().finally(() => subtitleJobs.delete(output));
+  subtitleJobs.set(output, task);
+  return task;
+}
+
+function sendVTT(res, text) {
+  res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.send(text);
+}
+
+/** 章节可用的全部字幕：同名外挂字幕 + 视频内嵌字幕轨。 */
+router.get("/subtitles/:id/tracks", async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const material = get("SELECT * FROM materials WHERE id = ?", Number(req.params.id));
+  if (!material) return res.status(404).json({ error: "章节不存在" });
+
+  const externalTarget = material.subtitle_path
+    ? resolveMaterialFile({ file_path: material.subtitle_path })
+    : null;
+  let externalUsable = false;
+  if (externalTarget) {
+    try { externalUsable = !!(await fileStat(externalTarget))?.isFile; } catch {}
+  }
+  const result = {
+    external: externalUsable ? { name: pBasename(externalTarget.path) } : null,
+    embedded: [],
+    reason: "",
+  };
+  // 内嵌轨需要本地文件才能 ffprobe；WebDAV/SMB 来源仍可使用外挂字幕。
+  const media = resolveMaterialFile(material);
+  if (!media) result.reason = "文件不存在";
+  else if (media.remote) result.reason = "远程来源暂不支持内嵌字幕";
+
+  if (media && !media.remote) {
+    const facts = await probe(media.path);
+    result.embedded = (facts?.subtitles || []).map((s) => ({ ...s }));
+  }
+  res.setHeader("Cache-Control", "private, no-cache");
+  res.json(result);
+});
+
+/** 内嵌字幕轨 → WebVTT（按 ffprobe 的 stream index 取）。 */
+router.get("/subtitles/:id/embedded/:index", async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const material = get("SELECT * FROM materials WHERE id = ?", Number(req.params.id));
+  if (!material) return res.status(404).json({ error: "章节不存在" });
+  const index = Number(req.params.index);
+  if (!Number.isInteger(index) || index < 0) {
+    return res.status(400).type("text/plain; charset=utf-8").send("字幕轨编号无效");
+  }
+  const target = resolveMaterialFile(material);
+  if (!target) return res.status(404).type("text/plain; charset=utf-8").send("文件不存在");
+  if (target.remote) {
+    return res.status(415).type("text/plain; charset=utf-8").send("远程来源暂不支持内嵌字幕");
+  }
+
+  const facts = await probe(target.path);
+  const track = (facts?.subtitles || []).find((s) => s.index === index);
+  if (!track) return res.status(404).type("text/plain; charset=utf-8").send("没有这条字幕轨");
+  if (!track.text) {
+    return res.status(415).type("text/plain; charset=utf-8").send("图形字幕（PGS/DVD）浏览器无法显示");
+  }
+
+  let stat;
+  try { stat = await fsp.stat(target.path); }
+  catch { return res.status(404).type("text/plain; charset=utf-8").send("文件不存在"); }
+  const output = subtitleCacheFile(target, stat, index);
+  try {
+    let text = null;
+    try { text = await fsp.readFile(output, "utf8"); } catch {}
+    if (text == null) text = await extractEmbeddedSubtitle(target.path, index, output);
+    sendVTT(res, text);
+  } catch (e) {
+    res.status(500).type("text/plain; charset=utf-8").send(`字幕提取失败：${e.message || e}`);
+  }
 });
 
 export default router;

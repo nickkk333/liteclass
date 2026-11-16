@@ -11,7 +11,7 @@
 - 课程列表：全部 / 收藏 / 我的上传 / 放映大厅 / 考试中心
 - 课程详情：音视频播放、播放进度记忆、倍速/循环/音量、章节目录、笔记（带时间点跳转）、资料下载、讨论与回复
 - **文件支持**（与 OfflineU 对齐）：视频 `mp4/mkv/avi/mov/webm/m4v/flv/wmv/ts/m2ts/mts`、音频 `mp3/wav/m4a/aac/ogg/flac`、图片 `png/jpg/jpeg/gif/webp/bmp/svg/ico/avif`、文档 `txt/md/html/htm/pdf/docx/doc/rtf/mhtml/mht`；`.txt` 纯文本、`.md` 排版渲染、`.pdf`/`.html` 内嵌、Office 与网页存档由服务端转成无脚本 HTML 后内联预览，图片直接显示，`.epub` 等其它格式可下载
-- **字幕**：与音视频同名的 `srt/vtt/ass/ssa/sub/sbv` 自动挂载，服务端统一转成 WebVTT
+- **字幕**：与音视频同名的 `srt/vtt/ass/ssa/sub/sbv` 自动挂载，服务端统一转成 WebVTT；视频自带的内嵌字幕轨会自动列出并默认显示，播放器「字幕」菜单可切换关闭 / 外挂 / 任意内嵌轨（PGS / DVD 图形字幕暂不支持）
 - **ffmpeg HLS / remux 转码**（复制自 OfflineU）：安装包内置 Linux x64 静态 `ffmpeg` / `ffprobe`，`/api/media/status` 按真实容器与编码判定 `direct / hls / remux / raw`；视频按关键帧切 MPEG-TS 分片，用 `hls.js` 播放（Safari 原生），失败自动回退；MKV / E-AC3 / DTS 等浏览器不支持的音轨统一转成 AAC，避免「有画面没声音」；结果缓存在 `data/cache`，按容量清理
 - **DLNA 投屏**：SSDP 发现电视、SOAP 推送/播放/暂停/跳转/停止，服务端单会话看门狗回写进度并自动连播下一节，兼容模式提供 ffmpeg 实时 MPEG-TS 流；全局投屏条可跨页面控制
 - **课程来源**：本地目录 / WebDAV / SMB 共享，密码只写不读，虚拟路径 `/__liteclass_sources__/<id>/...`，可测试连接并直接作为课程打开
@@ -66,16 +66,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.8_x86.fpk
+release/liteclass_1.0.9_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.8_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.9_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.8_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.9_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。

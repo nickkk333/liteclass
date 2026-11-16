@@ -49,6 +49,14 @@ export function subtitleUrl(materialId) {
   return `/api/subtitles/${materialId}?token=${encodeURIComponent(getToken())}`;
 }
 
+/** 视频内嵌字幕轨（服务端 ffmpeg 转 WebVTT） */
+export function embeddedSubtitleUrl(materialId, index) {
+  return `/api/subtitles/${materialId}/embedded/${index}?token=${encodeURIComponent(getToken())}`;
+}
+
+/** 章节可用的字幕清单：外挂字幕 + 内嵌字幕轨 */
+export const subtitleTracks = (materialId) => api(`/subtitles/${materialId}/tracks`);
+
 // 转码 / 投屏 / 课程来源
 export const mediaStatus = (id, hls = true) => api(`/media/status/${id}${hls ? "" : "?hls=0"}`);
 export const mediaPlan = (id) => api(`/media/plan/${id}`);

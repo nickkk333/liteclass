@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Pause, Volume2, Music, Video, Send, Users, Radio, SkipForward, FileText } from "lucide-react";
-import { api, fmtDuration, getToken, streamUrl, previewUrl, subtitleUrl } from "../api.js";
+import { api, fmtDuration, getToken, streamUrl, previewUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { useToast, Avatar, Empty, Spinner } from "../components/ui.jsx";
 import usePlaybackSource from "../hooks/usePlaybackSource.js";
+import useSubtitles from "../hooks/useSubtitles.js";
+import { SubtitleTrackList } from "../components/SubtitleTracks.jsx";
 
 export default function WatchParty() {
   const { roomId } = useParams();
@@ -38,6 +40,12 @@ export default function WatchParty() {
     enabled: timed,
     streamUrl: current ? streamUrl(current.id) : "",
     autoPlayRef: playingRef,
+  });
+  const subtitle = useSubtitles({
+    materialId: current?.id,
+    enabled: mediaMode === "video",
+    mediaRef: audioRef,
+    elementKey: playback.elementKey,
   });
 
   useEffect(() => {
@@ -177,9 +185,7 @@ export default function WatchParty() {
                   onPlay={() => { if (isHost) { setPlaying(true); sendSync({ playing: true }); } }}
                   onPause={() => { if (isHost) { setPlaying(false); sendSync({ playing: false }); } }}
                 >
-                  {current.has_subtitle ? (
-                    <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
-                  ) : null}
+                  <SubtitleTrackList options={subtitle.playable} selected={subtitle.selected} />
                 </video>
               ) : mediaMode === "audio" ? (
                 <>

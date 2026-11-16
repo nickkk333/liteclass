@@ -739,9 +739,19 @@ ul { margin: 0; padding: 0; list-style: none; }
 .mode-menu button span { flex: 1; }
 .mode-menu button:hover { background: var(--line); }
 .mode-menu button.active { background: var(--primary-soft); color: var(--primary); }
+.mode-menu button:disabled { opacity: .5; cursor: not-allowed; }
+.mode-menu button:disabled:hover { background: transparent; }
+/* 字幕菜单：轨道多时滚动，标签/语言分两行 */
+.subtitle-menu { min-width: 196px; max-height: min(62vh, 340px); overflow-y: auto; }
+.sub-item { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; }
+.sub-item .sub-label,
+.sub-item .sub-hint { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-label { font-size: 12.5px; font-weight: 600; }
+.sub-hint { font-size: 10.5px; font-weight: 500; color: var(--muted-2); }
 @media (max-width: 560px) {
   .volume-group input { display: none; }
   .mode-label { font-size: 11px; }
+  .subtitle-btn .mode-label { display: none; }
 }
 /* 全屏：原生 API 与 CSS 兜底共用同一布局 */
 .player-card:fullscreen,

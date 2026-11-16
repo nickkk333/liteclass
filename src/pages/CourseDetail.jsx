@@ -11,7 +11,9 @@ import { api, fmtDuration, fmtDateTime, streamUrl, previewUrl, subtitleUrl } fro
 import { useAuth } from "../App.jsx";
 import { useToast, Empty, Avatar, Modal, Confirm, Spinner } from "../components/ui.jsx";
 import usePlaybackSource from "../hooks/usePlaybackSource.js";
+import useSubtitles from "../hooks/useSubtitles.js";
 import CastMenu from "../components/CastMenu.jsx";
+import { SubtitleMenu, SubtitleTrackList } from "../components/SubtitleTracks.jsx";
 
 const TABS = [
   ["list", "目录", ListVideo],
@@ -80,6 +82,7 @@ export default function CourseDetail() {
   const [isFull, setIsFull] = useState(false);
   const [fauxFull, setFauxFull] = useState(false);
   const [modeMenu, setModeMenu] = useState(false);
+  const [subMenu, setSubMenu] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
 
   const audioRef = useRef(null);
@@ -102,6 +105,18 @@ export default function CourseDetail() {
     enabled: timed,
     streamUrl: current ? streamUrl(current.id) : "",
     autoPlayRef: playingRef,
+  });
+  const subtitle = useSubtitles({
+    materialId: current?.id,
+    enabled: mediaMode === "video",
+    mediaRef: audioRef,
+    elementKey: playback.elementKey,
+  });
+  // 字幕菜单和播放模式菜单互斥，避免两个浮层叠在一起。
+  const openSubMenu = (updater) => setSubMenu((prev) => {
+    const next = typeof updater === "function" ? updater(prev) : updater;
+    if (next) setModeMenu(false);
+    return next;
   });
 
   const load = async () => {
@@ -243,6 +258,8 @@ export default function CourseDetail() {
     setTime(0);
     setDuration(isTimed ? (m.duration || 0) : 0);
     setMediaFailed(false);
+    setSubMenu(false);
+    setModeMenu(false);
     // 文档、图片、PDF 没有播放进度：打开即记录为已学完
     if (!isTimed) report(m.id, 1, 1);
   };
@@ -436,9 +453,7 @@ export default function CourseDetail() {
                   onEnded={(e) => handleEnded(e.currentTarget)}
                   onError={onMediaError}
                 >
-                  {current.has_subtitle ? (
-                    <track kind="subtitles" src={subtitleUrl(current.id)} srcLang="zh" label="字幕" default />
-                  ) : null}
+                  <SubtitleTrackList options={subtitle.playable} selected={subtitle.selected} />
                 </video>
                 {playback.preparing && (
                   <div className="media-preparing">
@@ -575,11 +590,12 @@ export default function CourseDetail() {
                     const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; if (v > 0 && muted) { setMuted(false); if (audioRef.current) audioRef.current.muted = false; }
                   }} />
                   <button className="rate-btn" onClick={cycleRate}>{rate}x</button>
+                  <SubtitleMenu subtitle={subtitle} open={subMenu} setOpen={openSubMenu} />
                   <div className="mode-wrap">
                     <button
                       type="button"
                       className={`mode-btn ${mode !== "sequence" ? "active" : ""}`}
-                      onClick={(e) => { e.stopPropagation(); setModeMenu((v) => !v); }}
+                      onClick={(e) => { e.stopPropagation(); setSubMenu(false); setModeMenu((v) => !v); }}
                       title="选择播放结束后的行为"
                       aria-label={`播放模式：${modeLabel}`}
                       aria-expanded={modeMenu}
