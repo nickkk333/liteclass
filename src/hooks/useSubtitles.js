@@ -54,8 +54,10 @@ function buildOptions(data, materialId) {
     });
   }
   (data.embedded || []).forEach((track, i) => {
-    const label = track.title || langName(track.lang) || `内嵌字幕 ${i + 1}`;
-    const detail = [langName(track.lang), track.forced ? "强制" : "", track.text ? "" : "图形字幕"]
+    const lang = langName(track.lang);
+    const label = track.title || lang || `内嵌字幕 ${i + 1}`;
+    // 标题本身已经是语言名时，不再重复显示一行「英语 / 英语」。
+    const detail = [lang && lang !== label ? lang : "", track.forced ? "强制" : "", track.text ? "" : "图形字幕"]
       .filter(Boolean).join(" · ");
     list.push({
       key: `e${track.index}`,
