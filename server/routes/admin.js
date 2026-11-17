@@ -12,7 +12,7 @@ router.get("/settings", requireAuth, requireAdmin, (req, res) =>
   res.json({ ...publicSettings(), version: setting("version", "1.1.6"), ffmpeg_available: ffmpegAvailable() }));
 
 router.put("/settings", requireAuth, requireAdmin, (req, res) => {
-  const allowed = ["allow_registration", "allow_course_creation", "max_material_size", "max_course_size",
+  const allowed = ["allow_registration", "allow_course_creation",
     "enable_transcoding", "show_watch_ranking_on_home"];
   for (const key of allowed) {
     if (req.body && key in req.body) {

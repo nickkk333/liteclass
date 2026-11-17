@@ -20,8 +20,6 @@ export const useAuth = () => useContext(AuthCtx);
 const DEFAULT_SETTINGS = {
   allow_registration: false,
   allow_course_creation: true,
-  max_material_size: 100,
-  max_course_size: 1024,
   enable_transcoding: true,
   show_watch_ranking_on_home: false,
   version: "1.1.6",

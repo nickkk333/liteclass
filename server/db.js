@@ -230,8 +230,6 @@ export function publicSettings() {
   return {
     allow_registration: setting("allow_registration", "false") === "true",
     allow_course_creation: setting("allow_course_creation", "true") === "true",
-    max_material_size: Number(setting("max_material_size", "100")),
-    max_course_size: Number(setting("max_course_size", "1024")),
     enable_transcoding: setting("enable_transcoding", "true") === "true",
     show_watch_ranking_on_home: setting("show_watch_ranking_on_home", "false") === "true",
     version: setting("version", "1.1.6"),

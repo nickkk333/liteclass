@@ -7,7 +7,6 @@ import SubHeader from "../../components/SubHeader.jsx";
 export default function SettingsView({ onBack }) {
   const toast = useToast();
   const [settings, setSettings] = useState(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => { api("/settings").then(setSettings).catch((e) => toast(e.message, "error")); }, []);
 
@@ -16,15 +15,6 @@ export default function SettingsView({ onBack }) {
     try {
       await api("/settings", { method: "PUT", body: patch });
     } catch (e) { toast(e.message, "error"); }
-  };
-
-  const saveNumber = async (key, value) => {
-    const v = Number(value);
-    if (!Number.isFinite(v) || v < 0) return;
-    setBusy(true);
-    try { await api("/settings", { method: "PUT", body: { [key]: v } }); toast("已保存", "ok"); }
-    catch (e) { toast(e.message, "error"); }
-    setBusy(false);
   };
 
   if (!settings) return <><SubHeader title="系统设置" onBack={onBack} /><div className="loading-screen"><Spinner /></div></>;
@@ -71,41 +61,6 @@ export default function SettingsView({ onBack }) {
             {settings.ffmpeg_available === false ? "（当前未检测到，转码不可用）" : ""}。
             转码缓存位于 <code>data/cache</code>，可用 <code>LITECLASS_CACHE_LIMIT_GB</code> 限制容量。
             DLNA 投屏可用 <code>LITECLASS_DLNA=off</code> 关闭。
-          </div>
-        </div>
-
-        <div className="settings-group">
-          <div className="settings-row">
-            <div className="grow">
-              <div className="label">课程上传大小限制</div>
-              <div className="desc">用户上传单节课程视频/音频的最大限制（不限管理员挂载路径）</div>
-            </div>
-            <div className="right">
-              <input
-                className="num-input"
-                type="number"
-                defaultValue={settings.max_course_size}
-                onBlur={(e) => saveNumber("max_course_size", e.target.value)}
-                disabled={busy}
-              />
-              <span className="unit">MB</span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="grow">
-              <div className="label">资料上传大小限制</div>
-              <div className="desc">用户私有资料的最大上传大小（MB）</div>
-            </div>
-            <div className="right">
-              <input
-                className="num-input"
-                type="number"
-                defaultValue={settings.max_material_size}
-                onBlur={(e) => saveNumber("max_material_size", e.target.value)}
-                disabled={busy}
-              />
-              <span className="unit">MB</span>
-            </div>
           </div>
         </div>
 

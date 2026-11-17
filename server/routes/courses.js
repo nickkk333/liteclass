@@ -6,7 +6,7 @@ import { all, get, run, now, today, UPLOAD_DIR } from "../db.js";
 import { requireAuth, optionalAuth } from "../auth.js";
 import { kindOf, previewMode, extOf } from "../media.js";
 import { scanFolder, attachSubtitles, isMountedFile } from "../mounts.js";
-import { normalizeAnyPath, isVirtualPath } from "../paths.js";
+import { normalizeAnyPath, isVirtualPath, pBasename } from "../paths.js";
 import { repo } from "../sources.js";
 
 const router = Router();
@@ -18,7 +18,8 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
   },
 });
-export const upload = multer({ storage, limits: { fileSize: 8 * 1024 * 1024 * 1024 } });
+// 不限制上传大小：multer 默认无上限（磁盘容量由文件系统决定）。
+export const upload = multer({ storage });
 
 function levelFor(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -113,10 +114,12 @@ export async function createCourseFromFolder(user, title, folder) {
   if (!normalized) throw new Error("课程来源路径无效");
   let course = get("SELECT * FROM courses WHERE creator_id = ? AND folder_path = ?", user.id, normalized);
   if (!course) {
+    // 没给名称时用挂载目录的最后一段作为课程名，避免出现一堆「课程来源」。
+    const name = String(title || "").trim() || pBasename(normalized) || "课程来源";
     const r = run(
       `INSERT INTO courses (title,description,cover_image,category_id,type,folder_path,creator_id,group_id,is_materials_shared,scan_status,created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      title || "课程来源", "", "", null, "folder", normalized, user.id, null, 1, "scanning", now()
+      name, "", "", null, "folder", normalized, user.id, null, 1, "scanning", now()
     );
     course = get("SELECT * FROM courses WHERE id = ?", r.lastInsertRowid);
   }
@@ -159,16 +162,19 @@ router.post("/courses", requireAuth, async (req, res) => {
     title, description = "", category_id = null, cover_image = "",
     group_id = null, is_materials_shared = true, folder_path = "",
   } = req.body || {};
-  if (!title || !String(title).trim()) return res.status(400).json({ error: "请输入课程名称" });
 
   const { folder, error } = await validateFolder(folder_path);
   if (error) return res.status(400).json({ error });
   if (folder && req.user.role !== "admin") return res.status(403).json({ error: "只有管理员可以挂载 NAS 存储路径" });
 
+  // 挂载目录建课时，课程名留空就用目录名兜底。
+  const courseTitle = String(title || "").trim() || (folder ? pBasename(folder) : "");
+  if (!courseTitle) return res.status(400).json({ error: "请输入课程名称" });
+
   const r = run(
     `INSERT INTO courses (title,description,cover_image,category_id,type,folder_path,creator_id,group_id,is_materials_shared,scan_status,created_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    String(title).trim(), description, cover_image, category_id ? Number(category_id) : null,
+    courseTitle, description, cover_image, category_id ? Number(category_id) : null,
     folder ? "folder" : "manual", folder, req.user.id,
     group_id ? Number(group_id) : null, is_materials_shared === false || is_materials_shared === 0 ? 0 : 1,
     folder ? "scanning" : "idle", now()

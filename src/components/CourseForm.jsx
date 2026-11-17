@@ -5,6 +5,13 @@ import { useAuth } from "../App.jsx";
 import { Modal, Spinner, useToast } from "./ui.jsx";
 import FolderPicker from "./FolderPicker.jsx";
 
+/** 挂载路径的最后一段：用作默认课程名。 */
+function folderName(value) {
+  const clean = String(value || "").replace(/[\\/]+$/, "");
+  if (!clean) return "";
+  return clean.slice(Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\")) + 1);
+}
+
 export default function CourseForm({ course, categories, onClose, onSaved }) {
   const toast = useToast();
   const { isAdmin } = useAuth();
@@ -39,6 +46,12 @@ export default function CourseForm({ course, categories, onClose, onSaved }) {
     } catch (e) { toast(e.message, "error"); }
     setUploading(false);
   };
+
+  const applyFolder = (path) => setForm((f) => {
+    // 课程名还没填（或还是上一个目录名）时，自动用新目录名。
+    const auto = !f.title.trim() || f.title === folderName(f.folder_path);
+    return { ...f, folder_path: path, title: auto ? folderName(path) || f.title : f.title };
+  });
 
   const save = async () => {
     if (!form.title.trim()) return toast("请输入课程标题", "error");
@@ -147,7 +160,7 @@ export default function CourseForm({ course, categories, onClose, onSaved }) {
                 <span className="radio-dot" /> <HardDrive size={15} /> 默认路径
               </button>
               <button type="button" className={`storage-card ${form.storage === "mount" ? "active" : ""}`}
-                onClick={() => setForm({ ...form, storage: "mount" })}>
+                onClick={() => { setForm({ ...form, storage: "mount" }); if (!form.title.trim() && form.folder_path.trim()) applyFolder(form.folder_path); }}>
                 <span className="radio-dot" /> <FolderOpen size={15} /> 挂载路径
               </button>
             </div>
@@ -158,14 +171,14 @@ export default function CourseForm({ course, categories, onClose, onSaved }) {
                     className="input"
                     placeholder="例如：/vol1/videos/course1"
                     value={form.folder_path}
-                    onChange={(e) => setForm({ ...form, folder_path: e.target.value })}
+                    onChange={(e) => applyFolder(e.target.value)}
                   />
                   <button type="button" className="btn" onClick={() => setPick(true)}>
                     <FolderOpen size={15} /> 选择
                   </button>
                 </div>
                 <span className="hint">
-                  从 NAS 挂载目录读取课程文件，{course ? "修改路径后会重新扫描" : "创建后会自动导入该目录下的音视频与文档"}。
+                  从 NAS 挂载目录读取课程文件，{course ? "修改路径后会重新扫描" : "创建后会自动导入该目录下的音视频与文档"}；课程名留空时自动使用文件夹名。
                 </span>
               </>
             )}
@@ -177,7 +190,7 @@ export default function CourseForm({ course, categories, onClose, onSaved }) {
         <FolderPicker
           initial={form.folder_path}
           onClose={() => setPick(false)}
-          onPick={(path) => setForm((f) => ({ ...f, folder_path: path }))}
+          onPick={(path) => applyFolder(path)}
         />
       )}
     </>

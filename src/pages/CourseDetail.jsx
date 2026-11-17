@@ -468,9 +468,6 @@ export default function CourseDetail() {
                     <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download><Download size={14} /> 下载后播放</a>
                   </div>
                 )}
-                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
-                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
-                </button>
               </div>
             )}
 
@@ -502,9 +499,6 @@ export default function CourseDetail() {
                     <FileText size={13} /> {mediaFailed ? "浏览器无法播放该音频，可下载后播放" : "本音频包含字幕"}
                   </div>
                 )}
-                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
-                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
-                </button>
               </div>
             )}
 
@@ -517,9 +511,6 @@ export default function CourseDetail() {
                   <h2>{current.title}</h2>
                   <p>{course.uploader_name} · {MODE_LABELS.image}</p>
                 </div>
-                <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
-                  {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
-                </button>
               </div>
             )}
 
@@ -552,11 +543,6 @@ export default function CourseDetail() {
                   <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download>
                     <Download size={14} /> 下载原文件
                   </a>
-                )}
-                {current && (
-                  <button className="player-fullscreen" title={fullActive ? "退出全屏" : "全屏"} onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}>
-                    {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
-                  </button>
                 )}
               </div>
             )}
@@ -625,6 +611,14 @@ export default function CourseDetail() {
                       </>
                     )}
                   </div>
+                  <button
+                    className="icon-btn player-fullscreen-btn"
+                    onClick={toggleFullscreen}
+                    title={fullActive ? "退出全屏" : "全屏"}
+                    aria-label={fullActive ? "退出全屏" : "全屏"}
+                  >
+                    {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
+                  </button>
                 </div>
               </div>
             </div>
