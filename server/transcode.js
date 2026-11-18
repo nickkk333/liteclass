@@ -4,12 +4,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { fileStat, openRange } from "./files.js";
+import { fileStat, openRange, resolveMaterialFile, readCappedFile } from "./files.js";
 import { extOf, VIDEO_EXTS } from "./media.js";
 import { setting } from "./db.js";
+import { convertSubtitleToVTT, subtitleText, vttToSRT } from "./subtitles.js";
 import {
   probe, browserPlayable, ffmpegRun, ffmpegProcess, ffmpegAvailable, binaries,
-  remuxArgs, segmentArgs, streamArgs, keyframeProbeArgs, castPlan,
+  remuxArgs, segmentArgs, streamArgs, keyframeProbeArgs, castPlan, hardsubStreamArgs,
   HLS_SEGMENT_SECONDS, CACHE_DIR, CACHE_LIMIT_GB, HLS_VIDEO_CODECS,
 } from "./ffmpeg.js";
 
@@ -273,14 +274,111 @@ export async function serveBrowser(target, req, res) {
   return true;
 }
 
-export async function castPlanFor(target) {
-  if (!target || target.remote) return { needs_transcode: false, transcode_available: false, reason: "remote" };
+/** 投屏能力评估；externalSubtitle 表示章节已有同名外挂字幕文件。 */
+export async function castPlanFor(target, externalSubtitle = false) {
+  if (!target || target.remote) {
+    return { needs_transcode: false, transcode_available: false, reason: "remote", has_subtitle: externalSubtitle };
+  }
   const facts = await probe(target.path);
-  return castPlan(facts, extOf(target.path));
+  const embedded = (facts?.subtitles || []).some((s) => s.text);
+  return {
+    ...castPlan(facts, extOf(target.path)),
+    has_subtitle: externalSubtitle || (embedded && ffmpegAvailable()),
+  };
+}
+
+// ---------------- 字幕 ----------------
+
+const SUBTITLE_DIR = path.join(CACHE_DIR, "subtitles");
+const subtitleJobs = new Map();
+
+function embeddedSubtitleFile(target, stat, index) {
+  const key = crypto.createHash("sha1")
+    .update(`${path.resolve(target.path)}|${stat.size}|${stat.mtimeMs}|${index}`)
+    .digest("hex");
+  return path.join(SUBTITLE_DIR, `${key}.vtt`);
+}
+
+/**
+ * 内嵌文本字幕轨 → WebVTT 文本（按文件 size+mtime+轨道号做磁盘缓存，
+ * 同一轨的并发请求合并成一次 ffmpeg 转换）。浏览器 <track> 与投屏外挂字幕共用。
+ */
+export function embeddedSubtitleVTT(target, index) {
+  const jobKey = `${target.path}#${index}`;
+  if (subtitleJobs.has(jobKey)) return subtitleJobs.get(jobKey);
+  const task = (async () => {
+    const stat = await fileStat(target);
+    const output = embeddedSubtitleFile(target, stat, index);
+    try {
+      const cached = await fsp.readFile(output, "utf8");
+      if (cached) return cached;
+    } catch {}
+    await fsp.mkdir(SUBTITLE_DIR, { recursive: true });
+    const tmp = `${output}.${process.pid}.tmp.vtt`;
+    try {
+      await ffmpegRun([
+        "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-i", target.path, "-map", `0:${index}`, "-c:s", "webvtt", "-f", "webvtt", tmp,
+      ], 5 * 60 * 1000);
+      const text = await fsp.readFile(tmp, "utf8");
+      await fsp.rename(tmp, output);
+      return text;
+    } finally {
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+    }
+  })().finally(() => subtitleJobs.delete(jobKey));
+  subtitleJobs.set(jobKey, task);
+  return task;
+}
+
+/** 内嵌字幕里挑一条能转文本的轨（优先 default）。PGS/DVD 图形字幕无法烧录成文本。 */
+export function pickTextTrack(facts) {
+  const list = facts?.subtitles || [];
+  return list.find((s) => s.text && s.default) || list.find((s) => s.text) || null;
+}
+
+/**
+ * 烧录投屏用的字幕文件：外挂字幕或内嵌文本轨统一转成 SRT 落到缓存目录，
+ * 返回磁盘路径（libass 的 subtitles 滤镜直接读文件）；没有可用字幕返回 ""。
+ */
+export async function subtitleBurnFile(material) {
+  if (!material) return "";
+  let vtt = "";
+  let key = "";
+  if (material.subtitle_path) {
+    const external = resolveMaterialFile({ file_path: material.subtitle_path });
+    if (external) {
+      const [buffer] = await readCappedFile(external, 4 * 1024 * 1024);
+      vtt = convertSubtitleToVTT(external.path, subtitleText(buffer));
+      key = `ext|${external.path}|${buffer.length}`;
+    }
+  }
+  if (!vtt) {
+    const target = resolveMaterialFile(material);
+    if (!target || target.remote) return "";
+    const track = pickTextTrack(await probe(target.path));
+    if (!track) return "";
+    vtt = await embeddedSubtitleVTT(target, track.index);
+    key = `emb|${target.path}|${track.index}`;
+  }
+  const srt = vttToSRT(vtt);
+  if (!srt) return "";
+  await fsp.mkdir(SUBTITLE_DIR, { recursive: true });
+  const file = path.join(SUBTITLE_DIR, `burn-${sha(key).slice(0, 20)}.srt`);
+  try {
+    if (await fsp.readFile(file, "utf8") === srt) return file;
+  } catch {}
+  await fsp.writeFile(file, srt);
+  return file;
 }
 
 /** 投屏设备拉取的实时转码流；请求断开即杀掉 ffmpeg。 */
-export function castStream(target, facts, start, req, res) {
+export function castStream(target, facts, start, req, res, subtitleFile = "") {
+  // 有烧录字幕时走重编码流（字幕烧进画面，电视不用支持外挂字幕）。
+  if (subtitleFile) {
+    burnStream(target, facts, start, req, res, subtitleFile, "ts");
+    return;
+  }
   const { args, mime } = streamArgs(target.path, facts, start, extOf(target.path));
   const { child, done } = ffmpegProcess(args);
   res.setHeader("Content-Type", mime);
@@ -292,4 +390,20 @@ export function castStream(target, facts, start, req, res) {
   req.on("close", stop);
   res.on("close", stop);
   done.catch(() => { if (!res.headersSent) res.status(500).end("转码失败"); else res.end(); });
+}
+
+/** 烧录字幕的实时流：container="ts" 给 DLNA 电视，"mp4"（fMP4）给浏览器 / 接力投屏。 */
+export function burnStream(target, facts, start, req, res, subtitleFile, container = "mp4") {
+  const { args, mime } = hardsubStreamArgs(target.path, facts, start, subtitleFile, container);
+  const { child, done } = ffmpegProcess(args);
+  res.setHeader("Content-Type", mime);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-LiteClass-Stream", "ffmpeg-hardsub");
+  child.stdout.pipe(res);
+  // 设备/浏览器断开就立刻杀掉编码进程，避免继续占 CPU。
+  const stop = () => { if (!child.killed) child.kill(); };
+  req.on("close", stop);
+  res.on("close", stop);
+  done.catch(() => { if (!res.headersSent) res.status(500).end("烧录转码失败"); else res.end(); });
 }

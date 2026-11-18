@@ -84,7 +84,7 @@ function pickDefault(options) {
   return preferred ? preferred.key : "off";
 }
 
-export default function useSubtitles({ materialId, enabled = true, mediaRef, elementKey }) {
+export default function useSubtitles({ materialId, enabled = true, mediaRef, elementKey, native = true }) {
   const [data, setData] = useState(EMPTY);
   const [selected, setSelected] = useState("off");
   const [loading, setLoading] = useState(false);
@@ -119,6 +119,8 @@ export default function useSubtitles({ materialId, enabled = true, mediaRef, ele
 
   // 按 selected 打开/关闭 textTrack。track 元素与媒体元素一起挂载，
   // HLS 切换会重建 <video>，所以 elementKey 变化时也要重新应用。
+  // native=false 时全部保持 disabled：画面里的字幕由 SubtitleOverlay 自绘
+  // （镜像投屏只看画面，自绘才不会丢字幕）。
   useEffect(() => {
     const el = mediaRef?.current;
     if (!el) return undefined;
@@ -126,7 +128,7 @@ export default function useSubtitles({ materialId, enabled = true, mediaRef, ele
       const tracks = el.textTracks;
       if (!tracks) return;
       for (let i = 0; i < tracks.length; i += 1) {
-        const wanted = playable[i]?.key === selected ? "showing" : "disabled";
+        const wanted = native && playable[i]?.key === selected ? "showing" : "disabled";
         if (tracks[i].mode !== wanted) {
           try { tracks[i].mode = wanted; } catch {}
         }
@@ -142,7 +144,7 @@ export default function useSubtitles({ materialId, enabled = true, mediaRef, ele
       el.removeEventListener("loadeddata", apply);
       window.clearTimeout(timer);
     };
-  }, [playable, selected, elementKey, mediaRef]);
+  }, [playable, selected, elementKey, mediaRef, native]);
 
   const active = options.find((o) => o.key === selected) || null;
   return {

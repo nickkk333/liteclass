@@ -8,7 +8,7 @@ const HLS_RETRIES = 20;
 const HLS_RETRY_DELAY = 5000;
 const POLL_INTERVAL = 2000;
 
-export default function usePlaybackSource({ mediaRef, materialId, enabled, streamUrl, autoPlayRef }) {
+export default function usePlaybackSource({ mediaRef, materialId, enabled, streamUrl, autoPlayRef, overrideUrl = "" }) {
   const [state, setState] = useState({ mode: "direct", preparing: false, error: "", notice: "" });
   const [reload, setReload] = useState(0);
   const hlsRef = useRef(null);
@@ -32,6 +32,11 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     fallbackingRef.current = false;
     if (!enabled || !materialId) {
       setState({ mode: "direct", preparing: false, error: "" });
+      return undefined;
+    }
+    // 投屏烧录流：直接当普通 <video src> 播（fMP4），不参与 HLS / remux 状态机。
+    if (overrideUrl) {
+      setState({ mode: "burn", preparing: false, error: "" });
       return undefined;
     }
     const alive = () => seq === seqRef.current;
@@ -153,15 +158,16 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
     setState({ mode: "loading", preparing: true, error: "" });
     status().then((s) => applyStatus(s)).catch(() => setState({ mode: "direct", preparing: false, error: "" }));
     return () => { clearTimers(); };
-  }, [materialId, enabled, streamUrl]);
+  }, [materialId, enabled, streamUrl, overrideUrl]);
 
   let src = streamUrl;
-  if (state.preparing || state.mode === "hls") src = undefined;
+  if (overrideUrl) src = overrideUrl;
+  else if (state.preparing || state.mode === "hls") src = undefined;
   else if (state.mode === "remux") src = `${streamUrl}&remux=${reload}`;
 
   return {
     src,
-    elementKey: `${materialId}-${reload}`,
+    elementKey: `${materialId}-${reload}${overrideUrl ? "-burn" : ""}`,
     preparing: state.preparing,
     mode: state.mode,
     error: state.error,

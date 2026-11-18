@@ -196,3 +196,53 @@ export function convertSubtitleToVTT(filePath, text) {
 export function subtitleText(buffer) {
   return decodeText(buffer);
 }
+
+const srtClock = (ms) => {
+  const value = Math.max(0, Math.round(ms));
+  const pad = (n, width = 2) => String(n).padStart(width, "0");
+  return `${pad(Math.floor(value / 3600000))}:${pad(Math.floor((value % 3600000) / 60000))}:${pad(Math.floor((value % 60000) / 1000))},${pad(value % 1000, 3)}`;
+};
+
+/** VTT 时间（hh:mm:ss.mmm 或 mm:ss.mmm）→ 毫秒 */
+function vttTimeToMS(value) {
+  const parts = String(value || "").trim().replace(",", ".").split(":").map(Number);
+  while (parts.length < 3) parts.unshift(0);
+  const [hours, minutes, seconds] = parts.slice(-3);
+  if (![hours, minutes, seconds].every(Number.isFinite)) return null;
+  return (hours * 3600 + minutes * 60 + seconds) * 1000;
+}
+
+/**
+ * WebVTT → SRT。电视（DLNA 渲染器）对外挂字幕基本只认 SRT，
+ * 所以投屏统一转成 SRT；offsetSeconds 用于转码流从中间起播时对齐时间轴。
+ */
+export function vttToSRT(input, offsetSeconds = 0) {
+  const offset = Math.max(0, Number(offsetSeconds) || 0) * 1000;
+  const cues = [];
+  let block = [];
+  const flush = () => {
+    if (!block.length) return;
+    const lines = block;
+    block = [];
+    const timingIndex = lines.findIndex((line) => line.includes("-->"));
+    // WEBVTT 头、NOTE / STYLE / REGION 块没有时间轴，直接丢掉
+    if (timingIndex < 0) return;
+    const [fromRaw, toRaw] = lines[timingIndex].split("-->");
+    const start = vttTimeToMS(fromRaw);
+    const end = vttTimeToMS(String(toRaw || "").trim().split(/\s+/)[0]);
+    const body = lines.slice(timingIndex + 1).join("\n").trim();
+    if (start == null || end == null || !body) return;
+    const from = start - offset;
+    const to = end - offset;
+    if (to <= 0) return;
+    cues.push(`${srtClock(Math.max(0, from))} --> ${srtClock(to)}\n${body}`);
+  };
+  for (const line of normalizeNewlines(input).split("\n")) {
+    if (!line.trim()) flush();
+    else block.push(line);
+  }
+  flush();
+  if (!cues.length) return "";
+  // SRT 传统上是 CRLF 换行，老的电视播放器解析更稳
+  return `${cues.map((cue, index) => `${index + 1}\n${cue}`).join("\n\n")}\n`.replace(/\n/g, "\r\n");
+}

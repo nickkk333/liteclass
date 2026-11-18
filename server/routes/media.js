@@ -41,7 +41,8 @@ router.get("/media/plan/:id", async (req, res) => {
   const material = materialOf(req);
   if (!material) return res.status(404).json({ error: "章节不存在" });
   try {
-    const plan = await castPlanFor(resolveMaterialFile(material));
+    const externalSubtitle = !!(material.subtitle_path && resolveMaterialFile({ file_path: material.subtitle_path }));
+    const plan = await castPlanFor(resolveMaterialFile(material), externalSubtitle);
     res.json({ ...plan, ffmpeg_available: ffmpegAvailable(), dlna_enabled: process.env.LITECLASS_DLNA !== "off" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -14,6 +14,7 @@ import fsRoutes from "./routes/fs.js";
 import streamRoutes from "./stream.js";
 import mediaRoutes from "./routes/media.js";
 import dlnaRoutes from "./routes/dlna.js";
+import castRoutes from "./routes/cast.js";
 import sourcesRoutes from "./routes/sources.js";
 import { binaries } from "./ffmpeg.js";
 
@@ -39,6 +40,7 @@ app.use("/api", roomRoutes);
 app.use("/api", streamRoutes);
 app.use("/api", mediaRoutes);
 app.use("/api", dlnaRoutes);
+app.use("/api", castRoutes);
 app.use("/api", sourcesRoutes);
 
 app.get("/api/ping", (req, res) => res.json({ ok: true, name: "轻课堂 Lite Class" }));

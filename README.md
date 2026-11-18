@@ -11,7 +11,7 @@
 - 课程列表：全部 / 收藏 / 我的上传 / 放映大厅 / 考试中心
 - 课程详情：音视频播放、播放进度记忆、倍速/循环/音量、章节目录、笔记（带时间点跳转）、资料下载、讨论与回复
 - **文件支持**（与 OfflineU 对齐）：视频 `mp4/mkv/avi/mov/webm/m4v/flv/wmv/ts/m2ts/mts`、音频 `mp3/wav/m4a/aac/ogg/flac`、图片 `png/jpg/jpeg/gif/webp/bmp/svg/ico/avif`、文档 `txt/md/html/htm/pdf/docx/doc/rtf/mhtml/mht`；`.txt` 纯文本、`.md` 排版渲染、`.pdf`/`.html` 内嵌、Office 与网页存档由服务端转成无脚本 HTML 后内联预览，图片直接显示，`.epub` 等其它格式可下载
-- **字幕**：与音视频同名的 `srt/vtt/ass/ssa/sub/sbv` 自动挂载，服务端统一转成 WebVTT；视频自带的内嵌字幕轨会自动列出并默认显示，播放器「字幕」菜单可切换关闭 / 外挂 / 任意内嵌轨（PGS / DVD 图形字幕暂不支持）
+- **字幕**：与音视频同名的 `srt/vtt/ass/ssa/sub/sbv` 自动挂载，服务端统一转成 WebVTT；视频自带的内嵌字幕轨会自动列出并默认显示，播放器「字幕」菜单可切换关闭 / 外挂 / 任意内嵌轨（PGS / DVD 图形字幕暂不支持）；**投屏字幕**：DLNA 推送外挂 SRT，镜像投屏把字幕画进画面，接力投屏可勾选「烧录字幕」由服务端把字幕烧进视频流
 - **ffmpeg HLS / remux 转码**（复制自 OfflineU）：安装包内置 Linux x64 静态 `ffmpeg` / `ffprobe`，`/api/media/status` 按真实容器与编码判定 `direct / hls / remux / raw`；视频按关键帧切 MPEG-TS 分片，用 `hls.js` 播放（Safari 原生），失败自动回退；MKV / E-AC3 / DTS 等浏览器不支持的音轨统一转成 AAC，避免「有画面没声音」；结果缓存在 `data/cache`，按容量清理
 - **系统投屏 + DLNA**：Safari / iPhone / iPad 可直接调起 AirPlay 设备；Chrome 等浏览器通过系统投屏面板使用 Chromecast、Miracast（Windows 按 Win+K）等；DLNA 走 SSDP 发现电视、SOAP 推送/播放/暂停/跳转/停止，服务端单会话看门狗回写进度并自动连播下一节，兼容模式提供 ffmpeg 实时 MPEG-TS 流；全局投屏条可跨页面控制
 - **课程来源**：本地目录 / WebDAV / SMB 共享，密码只写不读，虚拟路径 `/__liteclass_sources__/<id>/...`，可测试连接并直接作为课程打开
@@ -66,16 +66,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.13_x86.fpk
+release/liteclass_1.0.14_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.13_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.14_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.13_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.14_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。
@@ -186,12 +186,14 @@ release/            打包产物（.fpk，已加入 .gitignore）
 - 课程详情页顶部与全屏控制栏都有投屏按钮：Safari / iPhone / iPad 上点「AirPlay 投屏」直接调起系统 AirPlay 设备选择；Chrome 等浏览器点「打开系统投屏」调用 Remote Playback / 系统投屏面板，可使用 Chromecast、Miracast（Windows 按 Win+K）等系统设备。
 - 这些能力由浏览器与操作系统提供：AirPlay 需要与 Apple TV / 支持 AirPlay 的电视处于同一 Wi-Fi，Miracast 需先在系统面板里开启投屏；浏览器不支持时会提示，并仍可使用下方 DLNA 推送。
 - 投屏期间播放器仍可正常操作；全屏会铺满窗口，底部控制条始终完整可见，退出全屏按钮位于播放模式右侧。
+- 字幕：字幕直接画在播放器画面里，镜像投屏（Miracast / AirCast / 标签页投射）会连字幕一起投过去；由设备自己拉流的「接力」投屏（AirPlay 视频接力、Chromecast 媒体投屏）拿不到网页字幕，需要在投屏菜单里勾选「投屏时烧录字幕」——服务端用 ffmpeg 把字幕烧进 fMP4 实时流（`/api/cast/burn`），播放器会切到这条不可拖动的转码流，可从左上角提示条退出。
 
 ### DLNA 投屏
 
 - 课程详情页点「投屏」→ 刷新设备（SSDP M-SEARCH）→ 选择电视；可勾选「兼容模式」强制服务端重编码为 H.264/AAC MPEG-TS 实时流，默认按 ffprobe 结果自动判断。
 - 投屏后由服务端维护单一会话：每 3 秒读取设备位置、每 15 秒回写观看进度、播完自动推送下一节音视频；全局投屏条支持播放/暂停/拖动/停止，切换页面也不会中断。
 - 电视通过带一次性 cast 令牌的 URL 拉流，无需浏览器 JWT；需要电视与 NAS 在同一局域网，反向代理场景请正确传递 `X-Forwarded-Host` / `X-Forwarded-Proto`。WebDAV/SMB 来源只提供原文件流，不做投屏转码。
+- 字幕：DIDL-Lite 里带 `sec:CaptionInfoEx` / `sec:CaptionInfo`（三星等）与一条 `text/srt` 的外挂 `<res>`（LG / 索尼 / 安卓电视），电视通过 `/api/dlna/subtitle/<id>.srt` 自行拉取，转码流从中间起播时字幕时间轴同步平移；电视不认外挂字幕时，可勾选「投屏时烧录字幕」，服务端把字幕烧进 MPEG-TS 流再推送。烧录需要带 libass 的 ffmpeg 与系统中文字体。
 
 ### 课程来源（WebDAV / SMB / 本地）
 

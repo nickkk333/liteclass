@@ -1,7 +1,4 @@
-import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
-import crypto from "node:crypto";
 import { Router } from "express";
 import { get, UPLOAD_DIR } from "./db.js";
 import { currentUser } from "./auth.js";
@@ -13,9 +10,9 @@ import { inlineLocalAssets } from "./office/html.js";
 import { decodeText } from "./encoding.js";
 import { convertSubtitleToVTT, subtitleText } from "./subtitles.js";
 import { resolveMaterialFile, fileStat, openRange, readCappedFile, readSibling } from "./files.js";
-import { serveBrowser } from "./transcode.js";
+import { serveBrowser, embeddedSubtitleVTT } from "./transcode.js";
 import { validCastToken } from "./dlna.js";
-import { probe, ffmpegRun, CACHE_DIR } from "./ffmpeg.js";
+import { probe } from "./ffmpeg.js";
 
 const router = Router();
 
@@ -241,38 +238,7 @@ router.get("/subtitles/:id", async (req, res) => {
   res.send(text);
 });
 
-// 内嵌字幕抽成 WebVTT 后缓存到 CACHE_DIR/subtitles（按文件 size+mtime+轨道号失效）。
-const SUBTITLE_CACHE_DIR = path.join(CACHE_DIR, "subtitles");
-const subtitleJobs = new Map();
-
-function subtitleCacheFile(target, stat, index) {
-  const key = crypto.createHash("sha1")
-    .update(`${path.resolve(target.path)}|${stat.size}|${stat.mtimeMs}|${index}`)
-    .digest("hex");
-  return path.join(SUBTITLE_CACHE_DIR, `${key}.vtt`);
-}
-
-/** ffmpeg 把内嵌文本字幕轨转成 WebVTT；同一轨并发请求合并成一次转换。 */
-function extractEmbeddedSubtitle(source, index, output) {
-  if (subtitleJobs.has(output)) return subtitleJobs.get(output);
-  const task = (async () => {
-    await fsp.mkdir(SUBTITLE_CACHE_DIR, { recursive: true });
-    const tmp = `${output}.${process.pid}.tmp.vtt`;
-    try {
-      await ffmpegRun([
-        "-hide_banner", "-loglevel", "error", "-nostdin",
-        "-i", source, "-map", `0:${index}`, "-c:s", "webvtt", "-f", "webvtt", tmp,
-      ], 5 * 60 * 1000);
-      const text = await fsp.readFile(tmp, "utf8");
-      await fsp.rename(tmp, output);
-      return text;
-    } finally {
-      await fsp.rm(tmp, { force: true }).catch(() => {});
-    }
-  })().finally(() => subtitleJobs.delete(output));
-  subtitleJobs.set(output, task);
-  return task;
-}
+// 内嵌字幕的抽取与缓存放在 transcode.js，投屏外挂字幕复用同一份实现。
 
 function sendVTT(res, text) {
   res.setHeader("Content-Type", "text/vtt; charset=utf-8");
@@ -336,15 +302,8 @@ router.get("/subtitles/:id/embedded/:index", async (req, res) => {
     return res.status(415).type("text/plain; charset=utf-8").send("图形字幕（PGS/DVD）浏览器无法显示");
   }
 
-  let stat;
-  try { stat = await fsp.stat(target.path); }
-  catch { return res.status(404).type("text/plain; charset=utf-8").send("文件不存在"); }
-  const output = subtitleCacheFile(target, stat, index);
   try {
-    let text = null;
-    try { text = await fsp.readFile(output, "utf8"); } catch {}
-    if (text == null) text = await extractEmbeddedSubtitle(target.path, index, output);
-    sendVTT(res, text);
+    sendVTT(res, await embeddedSubtitleVTT(target, index));
   } catch (e) {
     res.status(500).type("text/plain; charset=utf-8").send(`字幕提取失败：${e.message || e}`);
   }

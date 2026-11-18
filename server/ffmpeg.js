@@ -349,6 +349,43 @@ export function segmentArgs(file, facts, segment, output) {
   return args;
 }
 
+/** libass 的 subtitles 滤镜里路径需要转义（Windows 盘符冒号必须写成 \:）。 */
+export function subtitleFilterPath(file) {
+  return String(file).replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+}
+
+/**
+ * 烧录字幕的滤镜链：先按上限缩放再叠字幕（字保持清晰）。
+ * 字体交给 libass 自己的默认字体，缺中文字体时由系统 fontconfig 兜底。
+ */
+export function hardsubFilter(subtitleFile, facts) {
+  const parts = [];
+  if (TRANSCODE_HEIGHT > 0 && (facts?.video?.height || 0) > TRANSCODE_HEIGHT) {
+    parts.push(`scale=-2:'min(${TRANSCODE_HEIGHT},ih)'`);
+  }
+  parts.push(`subtitles=${subtitleFilterPath(subtitleFile)}:force_style='FontSize=20,Outline=1.2,Shadow=0,MarginV=22'`);
+  return parts.join(",");
+}
+
+/**
+ * 烧录字幕的实时流：必须重编码（burn-in 无法 copy）。
+ * container: "ts" 给 DLNA 电视， "mp4" 给浏览器 / 接力投屏（fMP4 渐进流）。
+ */
+export function hardsubStreamArgs(file, facts, start, subtitleFile, container = "ts") {
+  const args = commonInput(file, start);
+  args.push("-map", "0:v:0?", "-map", "0:a:0?");
+  args.push("-vf", hardsubFilter(subtitleFile, facts));
+  args.push("-c:v", "libx264", "-preset", TRANSCODE_PRESET, "-crf", TRANSCODE_CRF, "-pix_fmt", "yuv420p");
+  if (facts?.audio) args.push(...audioEncodeArgs());
+  if (container === "mp4") {
+    args.push("-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4");
+  } else {
+    args.push("-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0");
+  }
+  args.push("pipe:1");
+  return { args, mime: container === "mp4" ? "video/mp4" : "video/mp2t" };
+}
+
 /** 电视拉流：可 copy 则只换容器，否则 H.264 + AAC；纯音频输出 ADTS/MP3。 */
 export function streamArgs(file, facts, start, ext) {
   const args = commonInput(file, start);

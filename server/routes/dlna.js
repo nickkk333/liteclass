@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import {
-  devices, startCast, control, sessionView, streamHandler, dlnaEnabled,
+  devices, startCast, control, sessionView, streamHandler, subtitleHandler, dlnaEnabled,
 } from "../dlna.js";
 
 const router = Router();
@@ -16,6 +16,8 @@ const fail = (res, e, status = 502) => res.status(status).json({ error: e.messag
 // 电视直接拉取：不带 JWT，靠一次性 cast 令牌。
 router.get("/dlna/stream", streamHandler);
 router.head("/dlna/stream", streamHandler);
+// 电视拉取的外挂字幕（<id>.srt），同样只认 cast 令牌。
+router.get("/dlna/subtitle/:file", subtitleHandler);
 
 router.get("/dlna/devices", requireAuth, guard, async (req, res) => {
   try {
@@ -33,6 +35,7 @@ router.post("/dlna/cast", requireAuth, guard, async (req, res) => {
       materialId: Number(body.material_id),
       startSeconds: Number(body.start_seconds) || 0,
       transcode: String(body.transcode || "auto"),
+      burn: body.burn === true || body.burn === "on",
       duration: Number(body.duration) || 0,
       userId: req.user.id,
     });

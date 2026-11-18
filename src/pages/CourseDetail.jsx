@@ -4,7 +4,7 @@ import {
   ArrowLeft, Heart, Settings2, Play, Pause, SkipBack, SkipForward, SquarePlay,
   Volume2, VolumeX, Repeat1, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
   Music, FileText, Video, Trash2, Send, Clock, Download, Pencil, CornerDownRight,
-  PanelRight, X, ListMusic, PauseCircle, CheckCircle2, Minimize, Check,
+  X, ListMusic, PauseCircle, CheckCircle2, Minimize, Check,
   Image as ImageIcon, ExternalLink,
 } from "lucide-react";
 import { api, fmtDuration, fmtDateTime, streamUrl, previewUrl, subtitleUrl } from "../api.js";
@@ -13,7 +13,8 @@ import { useToast, Empty, Avatar, Modal, Confirm, Spinner } from "../components/
 import usePlaybackSource from "../hooks/usePlaybackSource.js";
 import useSubtitles from "../hooks/useSubtitles.js";
 import CastMenu from "../components/CastMenu.jsx";
-import { SubtitleMenu, SubtitleTrackList } from "../components/SubtitleTracks.jsx";
+import SubtitleOverlay from "../components/SubtitleOverlay.jsx";
+import { SubtitleMenu } from "../components/SubtitleTracks.jsx";
 
 const TABS = [
   ["list", "目录", ListVideo],
@@ -78,7 +79,7 @@ export default function CourseDetail() {
   const [showNoteCompose, setShowNoteCompose] = useState(false);
   const [withTimestamp, setWithTimestamp] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [sideOpen, setSideOpen] = useState(false);
+  const [dirOpen, setDirOpen] = useState(true);
   const [isFull, setIsFull] = useState(false);
   const [fauxFull, setFauxFull] = useState(false);
   const [modeMenu, setModeMenu] = useState(false);
@@ -99,16 +100,41 @@ export default function CourseDetail() {
   const ModeIcon = PLAY_MODES.find(([key]) => key === mode)?.[2] || ListMusic;
   const modeLabel = PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放";
   const fullActive = isFull || fauxFull;
+  // 投屏烧录模式：把播放源换成服务端烧好字幕的转码流（投屏菜单里勾选后生效）。
+  const [castBurnUrl, setCastBurnUrl] = useState("");
   const playback = usePlaybackSource({
     mediaRef: audioRef,
     materialId: current?.id,
     enabled: timed,
     streamUrl: current ? streamUrl(current.id) : "",
     autoPlayRef: playingRef,
+    overrideUrl: castBurnUrl,
   });
+
+  // 换章节时退出烧录流，避免把上一集的转码流套到新章节上。
+  useEffect(() => { setCastBurnUrl(""); }, [current?.id]);
+
+  // 切到烧录流并等媒体就绪（切换后 <video> 会重建，所以直接轮询 readyState）。
+  const applyCastSource = (url) => {
+    setCastBurnUrl(url || "");
+    if (!url) return Promise.resolve();
+    return new Promise((resolve) => {
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        const el = audioRef.current;
+        if ((el && el.readyState >= 2) || Date.now() - startedAt > 12000) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 250);
+    });
+  };
   const subtitle = useSubtitles({
     materialId: current?.id,
     enabled: mediaMode === "video",
+    // 视频字幕一律画在画面里（SubtitleOverlay），不走 <track> 原生渲染：
+    // 镜像投屏（Miracast / AirCast / 标签页投射）只传屏幕画面，原生字幕容易丢。
+    native: false,
     mediaRef: audioRef,
     elementKey: playback.elementKey,
   });
@@ -419,14 +445,7 @@ export default function CourseDetail() {
         </div>
         <div className="head-title">{course.title}</div>
         <div className="head-actions">
-          <button
-            className={`icon-btn ${sideOpen ? "primary" : ""}`}
-            title={sideOpen ? "隐藏侧栏" : "显示目录与讨论"}
-            onClick={() => setSideOpen((v) => !v)}
-          >
-            <PanelRight size={17} />
-          </button>
-          <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} />
+          <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} onCastSource={applyCastSource} />
           <button className="icon-btn" title="发起一起看" onClick={() => navigate("/courses?tab=rooms")}><SquarePlay size={17} /></button>
           <button className="icon-btn" title="导出笔记" onClick={exportNotes}><Download size={17} /></button>
           <button className={`icon-btn ${course.is_favorited ? "primary" : ""}`} title="收藏" onClick={toggleFavorite}>
@@ -437,7 +456,7 @@ export default function CourseDetail() {
       </header>
 
       <div className="page-plain">
-        <div className={`course-layout ${sideOpen ? "side-open" : ""}`}>
+        <div className="course-layout">
           <div className={`player-card ${fauxFull ? "is-faux-full" : ""}`} ref={playerRef}>
             {mediaMode === "video" && current && (
               <div className="player-stage video">
@@ -445,7 +464,7 @@ export default function CourseDetail() {
                   key={playback.elementKey}
                   ref={audioRef}
                   src={playback.src}
-                  controls={!fullActive}
+                  controls={false}
                   playsInline
                   x-webkit-airplay="allow"
                   onLoadedMetadata={onLoadedMetadata}
@@ -454,9 +473,12 @@ export default function CourseDetail() {
                   onPause={() => setPlaying(false)}
                   onEnded={(e) => handleEnded(e.currentTarget)}
                   onError={onMediaError}
-                >
-                  <SubtitleTrackList options={subtitle.playable} selected={subtitle.selected} />
-                </video>
+                />
+                <SubtitleOverlay
+                  url={subtitle.active?.url || ""}
+                  mediaRef={audioRef}
+                  elementKey={playback.elementKey}
+                />
                 {playback.preparing && (
                   <div className="media-preparing">
                     <Spinner /> 正在准备可播版本（{playback.mode === "hls" ? "HLS 分片" : "MP4 重封装"}）…
@@ -464,6 +486,12 @@ export default function CourseDetail() {
                 )}
                 {playback.error ? <div className="media-error">{playback.error}</div> : null}
                 {playback.notice ? <div className="media-notice">{playback.notice}</div> : null}
+                {castBurnUrl ? (
+                  <div className="cast-burn-hint">
+                    <span>投屏烧录模式：字幕已烧进画面（该流不支持拖动进度条）</span>
+                    <button type="button" className="cast-burn-exit" onClick={() => setCastBurnUrl("")}>退出</button>
+                  </div>
+                ) : null}
                 {mediaFailed && !playback.preparing && (
                   <div className="media-error">
                     <span>浏览器无法直接播放该格式，可下载后用本地播放器打开</span>
@@ -474,7 +502,7 @@ export default function CourseDetail() {
             )}
 
             {mediaMode === "audio" && (
-              <div className="player-stage" onClick={(e) => { if (!e.target.closest("button")) togglePlay(); }}>
+              <div className="player-stage audio" onClick={(e) => { if (!e.target.closest("button")) togglePlay(); }}>
                 {course.cover_image
                   ? <div className="player-cover-wrap">
                     <img className="player-cover" src={course.cover_image} alt="" />
@@ -489,10 +517,6 @@ export default function CourseDetail() {
                     )}
                   </div>
                   : <div className="player-fallback"><Music size={52} /></div>}
-                <div className="player-meta">
-                  <h2>{current.title.replace(/\.(wav|mp3|m4a|flac|aac|ogg)$/i, "")}{current.file_ext ? <span className="file-ext">{current.file_ext}</span> : null}</h2>
-                  <p>{course.uploader_name} · {fmtDuration(duration || current.duration)}</p>
-                </div>
                 {playback.preparing ? <div className="subtitle-hint small muted">正在准备可播音源…</div> : null}
                 {playback.error ? <div className="subtitle-hint small">{playback.error}</div> : null}
                 {playback.notice ? <div className="subtitle-hint small muted">{playback.notice}</div> : null}
@@ -509,10 +533,6 @@ export default function CourseDetail() {
                 <a className="player-image-wrap" href={streamUrl(current.id)} target="_blank" rel="noreferrer" title="查看原图">
                   <img className="player-image" src={streamUrl(current.id)} alt={current.title} />
                 </a>
-                <div className="player-meta">
-                  <h2>{current.title}</h2>
-                  <p>{course.uploader_name} · {MODE_LABELS.image}</p>
-                </div>
               </div>
             )}
 
@@ -539,13 +559,8 @@ export default function CourseDetail() {
                 <FileText size={46} />
                 <div className="player-meta">
                   <h2>{current?.title || "该课程还没有章节"}</h2>
-                  {current && <p className="small muted">该格式暂不支持在线预览，可下载后查看</p>}
+                  {current && <p className="small muted">该格式暂不支持在线预览</p>}
                 </div>
-                {current && (
-                  <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download>
-                    <Download size={14} /> 下载原文件
-                  </a>
-                )}
               </div>
             )}
 
@@ -613,7 +628,16 @@ export default function CourseDetail() {
                       </>
                     )}
                   </div>
-                  <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} compact />
+                  <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} onCastSource={applyCastSource} compact />
+                  <button
+                    className={`icon-btn player-dir-btn ${dirOpen ? "active" : ""}`}
+                    onClick={() => setDirOpen((v) => !v)}
+                    title={dirOpen ? "收起目录" : "显示目录"}
+                    aria-label={dirOpen ? "收起目录" : "显示目录"}
+                    aria-pressed={dirOpen}
+                  >
+                    <ListVideo size={16} />
+                  </button>
                   <button
                     className="icon-btn player-fullscreen-btn"
                     onClick={toggleFullscreen}
@@ -636,7 +660,15 @@ export default function CourseDetail() {
                   </div>
                   <div className="now ellipsis">{current.title}</div>
                   <div className="player-buttons">
-                    <a className="icon-btn" href={`${streamUrl(current.id)}&download=1`} download title="下载原文件"><Download size={16} /></a>
+                    <button
+                      className={`icon-btn player-dir-btn ${dirOpen ? "active" : ""}`}
+                      onClick={() => setDirOpen((v) => !v)}
+                      title={dirOpen ? "收起目录" : "显示目录"}
+                      aria-label={dirOpen ? "收起目录" : "显示目录"}
+                      aria-pressed={dirOpen}
+                    >
+                      <ListVideo size={16} />
+                    </button>
                     <button className="icon-btn" onClick={toggleFullscreen} title={fullActive ? "退出全屏" : "全屏"}>
                       {fullActive ? <Minimize size={16} /> : <Maximize size={16} />}
                     </button>
@@ -669,36 +701,40 @@ export default function CourseDetail() {
             )}
           </div>
 
-          {sideOpen && (
-          <div className="side-panel">
+          {dirOpen && (
+          <div className="player-panel">
             <div className="panel-tabs">
               {TABS.map(([key, label, Icon]) => (
                 <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}><Icon size={13} /> {label}</button>
               ))}
-              <button className="panel-close" title="隐藏侧栏" onClick={() => setSideOpen(false)}><X size={14} /></button>
+              <button className="panel-close" title="收起目录" onClick={() => setDirOpen(false)}><X size={14} /></button>
             </div>
 
             <div className="panel-body">
               {tab === "list" && (
                 course.materials.length === 0
                   ? <Empty icon={<ListVideo size={26} />} text="暂无章节" />
-                  : course.materials.map((m, idx) => (
-                    <div key={m.id} className={`material-row ${m.id === currentId ? "active" : ""}`} onClick={() => selectMaterial(m)}>
-                      <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
-                      <div className="material-info">
-                        <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
-                        <div className="m">
-                          {MODE_LABELS[mediaModeOf(m)] || "文件"}
-                          {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
-                          {TIMED_MODES.has(mediaModeOf(m)) && m.position > 0 ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
-                          {m.has_subtitle ? " · 含字幕" : ""}
+                  : (
+                    <div className="material-list">
+                      {course.materials.map((m, idx) => (
+                        <div key={m.id} className={`material-row ${m.id === currentId ? "active" : ""}`} onClick={() => selectMaterial(m)}>
+                          <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
+                          <div className="material-info">
+                            <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
+                            <div className="m">
+                              {MODE_LABELS[mediaModeOf(m)] || "文件"}
+                              {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
+                              {TIMED_MODES.has(mediaModeOf(m)) && m.position > 0 ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                              {m.has_subtitle ? " · 含字幕" : ""}
+                            </div>
+                          </div>
+                          {m.completed
+                            ? <CheckCircle2 size={17} color="var(--success)" title="已完成" />
+                            : <span className="kind">{String(idx + 1).padStart(3, "0")}</span>}
                         </div>
-                      </div>
-                      {m.completed
-                        ? <CheckCircle2 size={17} color="var(--success)" title="已完成" />
-                        : <span className="kind">{String(idx + 1).padStart(3, "0")}</span>}
+                      ))}
                     </div>
-                  ))
+                  )
               )}
 
               {tab === "notes" && (
@@ -744,20 +780,24 @@ export default function CourseDetail() {
               {tab === "files" && (
                 <>
                   <div className="doc-toolbar"><FileText size={14} /><span className="small muted">共 {course.materials.length} 个文件</span></div>
-                  {course.materials.length === 0 ? <Empty icon={<FolderOpen size={24} />} text="暂无资料" /> : course.materials.map((m) => (
-                    <div className="material-row" key={m.id} onClick={() => selectMaterial(m)}>
-                      <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
-                      <div className="material-info">
-                        <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
-                        <div className="m">
-                          {MODE_LABELS[mediaModeOf(m)] || "文件"}
-                          {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
-                          {TIMED_MODES.has(mediaModeOf(m)) && m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                  {course.materials.length === 0 ? <Empty icon={<FolderOpen size={24} />} text="暂无资料" /> : (
+                    <div className="material-list">
+                      {course.materials.map((m) => (
+                        <div className="material-row" key={m.id} onClick={() => selectMaterial(m)}>
+                          <div className="material-thumb"><FileIcon type={mediaModeOf(m)} /></div>
+                          <div className="material-info">
+                            <div className="t clamp-2">{m.title}{m.file_ext ? <span className="file-ext">{m.file_ext}</span> : null}</div>
+                            <div className="m">
+                              {MODE_LABELS[mediaModeOf(m)] || "文件"}
+                              {TIMED_MODES.has(mediaModeOf(m)) && ` · 时长 ${Number(m.duration) > 0 ? fmtDuration(m.duration) : "未知"}`}
+                              {TIMED_MODES.has(mediaModeOf(m)) && m.position ? ` · 已观看 ${fmtDuration(m.position)}` : ""}
+                            </div>
+                          </div>
+                          <a className="icon-btn" href={`${streamUrl(m.id)}&download=1`} download onClick={(e) => e.stopPropagation()}><Download size={15} /></a>
                         </div>
-                      </div>
-                      <a className="icon-btn" href={`${streamUrl(m.id)}&download=1`} download onClick={(e) => e.stopPropagation()}><Download size={15} /></a>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </>
               )}
 
