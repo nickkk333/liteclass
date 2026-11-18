@@ -736,40 +736,68 @@ ul { margin: 0; padding: 0; list-style: none; }
   .mode-label { font-size: 11px; }
   .subtitle-btn .mode-label { display: none; }
 }
-/* 全屏：原生 API 与 CSS 兜底共用同一布局 */
+/* 全屏：原生 API 与 CSS 兜底共用同一布局。
+   关键点是铺满视口并锁死高度，让舞台区收缩、底部控制条始终完整可见。 */
 .player-card:fullscreen,
 .player-card.is-faux-full {
   position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
   inset: 0 !important;
-  width: auto !important;
-  height: auto !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
   margin: 0 !important;
   z-index: 120;
   border-radius: 0;
   display: flex;
   flex-direction: column;
-  background: var(--card);
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #000;
 }
 .player-card:fullscreen .player-stage,
 .player-card.is-faux-full .player-stage {
-  flex: 1;
+  flex: 1 1 auto;
   aspect-ratio: auto;
+  width: 100%;
   height: auto;
   min-height: 0;
   max-height: none;
+  margin: 0;
+  overflow: hidden;
+}
+.player-card:fullscreen .player-stage.video,
+.player-card.is-faux-full .player-stage.video { padding: 0; background: #000; }
+.player-card:fullscreen .player-stage video,
+.player-card.is-faux-full .player-stage video {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 .player-card:fullscreen .player-controls,
-.player-card.is-faux-full .player-controls { flex: none; }
+.player-card.is-faux-full .player-controls {
+  flex: 0 0 auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+}
 .player-card:fullscreen .doc-stage,
 .player-card.is-faux-full .doc-stage { flex: 1; min-height: 0; }
 .player-card:fullscreen .doc-iframe,
 .player-card.is-faux-full .doc-iframe { flex: 1; height: auto; min-height: 0; max-height: none; }
 .player-card:fullscreen audio,
 .player-card.is-faux-full audio { display: none; }
+/* 图片全屏：图片占满可用空间，标题和时间放在下方 */
+.player-card:fullscreen .player-stage.image,
+.player-card.is-faux-full .player-stage.image { align-items: stretch; padding: 10px 10px 0; }
+.player-card:fullscreen .player-image-wrap,
+.player-card.is-faux-full .player-image-wrap { flex: 1 1 auto; min-height: 0; }
+.player-card:fullscreen .player-image,
+.player-card.is-faux-full .player-image { max-width: 100%; max-height: 100%; border-radius: 0; }
+.player-card:fullscreen .player-stage .player-meta,
+.player-card.is-faux-full .player-stage .player-meta { flex: none; margin-top: 10px; margin-bottom: 8px; }
+.player-card:fullscreen .player-cover-wrap,
+.player-card.is-faux-full .player-cover-wrap { flex: none; }
 /* 全屏按钮放在播放模式旁边，和模式按钮同高 */
 .player-fullscreen-btn { width: 28px; height: 28px; border-radius: 8px; }
 @media (min-width: 781px) {
@@ -1320,6 +1348,8 @@ ul { margin: 0; padding: 0; list-style: none; }
   box-shadow: 0 18px 46px rgba(15, 23, 42, .22);
 }
 .cast-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* 播放器工具栏里的投屏菜单向上展开，避免被屏幕底部裁掉 */
+.cast-menu.up { top: auto; bottom: 40px; }
 .cast-devices { display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow: auto; }
 .cast-device {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
@@ -1330,6 +1360,14 @@ ul { margin: 0; padding: 0; list-style: none; }
 .cast-device:disabled { opacity: .55; cursor: default; }
 .cast-device-name { font-size: 13px; font-weight: 600; }
 .check-row { display: flex; align-items: center; gap: 7px; }
+.cast-native {
+  display: flex; flex-direction: column; gap: 7px; padding: 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--primary-soft);
+}
+.cast-native-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.cast-native .btn { align-self: flex-start; }
+.cast-divider { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.cast-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .cast-bar {
   position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 80;
   width: min(760px, calc(100% - 24px)); padding: 10px 13px;

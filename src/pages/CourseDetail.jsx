@@ -426,7 +426,7 @@ export default function CourseDetail() {
           >
             <PanelRight size={17} />
           </button>
-          <CastMenu material={current} mode={mediaMode} />
+          <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} />
           <button className="icon-btn" title="发起一起看" onClick={() => navigate("/courses?tab=rooms")}><SquarePlay size={17} /></button>
           <button className="icon-btn" title="导出笔记" onClick={exportNotes}><Download size={17} /></button>
           <button className={`icon-btn ${course.is_favorited ? "primary" : ""}`} title="收藏" onClick={toggleFavorite}>
@@ -445,7 +445,9 @@ export default function CourseDetail() {
                   key={playback.elementKey}
                   ref={audioRef}
                   src={playback.src}
-                  controls
+                  controls={!fullActive}
+                  playsInline
+                  x-webkit-airplay="allow"
                   onLoadedMetadata={onLoadedMetadata}
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
                   onPlay={() => setPlaying(true)}
@@ -611,6 +613,7 @@ export default function CourseDetail() {
                       </>
                     )}
                   </div>
+                  <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} compact />
                   <button
                     className="icon-btn player-fullscreen-btn"
                     onClick={toggleFullscreen}
@@ -647,6 +650,7 @@ export default function CourseDetail() {
                 key={playback.elementKey}
                 ref={audioRef}
                 src={playback.src}
+                x-webkit-airplay="allow"
                 onLoadedMetadata={onLoadedMetadata}
                 onTimeUpdate={(e) => setTime(e.target.currentTime)}
                 onPlay={() => setPlaying(true)}

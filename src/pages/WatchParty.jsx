@@ -180,6 +180,8 @@ export default function WatchParty() {
                   ref={audioRef}
                   src={playback.src}
                   controls={isHost}
+                  playsInline
+                  x-webkit-airplay="allow"
                   onLoadedMetadata={onLoadedMetadata}
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
                   onPlay={() => { if (isHost) { setPlaying(true); sendSync({ playing: true }); } }}
@@ -193,6 +195,7 @@ export default function WatchParty() {
                     key={playback.elementKey}
                     ref={audioRef}
                     src={playback.src}
+                    x-webkit-airplay="allow"
                     onLoadedMetadata={onLoadedMetadata}
                     onTimeUpdate={(e) => setTime(e.target.currentTime)}
                     onPlay={() => setPlaying(true)}
