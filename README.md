@@ -33,17 +33,16 @@
 
 ```bash
 npm install
-npm run seed        # 首次初始化数据库与演示数据
+npm run seed        # 首次初始化数据库与管理员账号
 npm run build       # 构建前端到 dist/
 npm start           # 启动服务，访问 http://localhost:8081
 ```
 
-打开 <http://localhost:8081>，使用演示账号登录：
+打开 <http://localhost:8081>，使用管理员账号登录：
 
 | 账号 | 密码 | 角色 |
 | --- | --- | --- |
 | `admin` | `admin` | 管理员 |
-| `student` | `123456` | 普通学员 |
 
 ### 开发模式
 
@@ -53,34 +52,34 @@ npm run dev
 
 同时启动 API（`http://localhost:8081`）与 Vite 开发服务器（`http://localhost:5173`），Vite 会把 `/api`、`/uploads`、`/media` 代理到 API，并支持 WebSocket。
 
-### 重置演示数据
+### 重置数据库
 
 ```bash
 npm run seed:force
 ```
 
-会清空并重新生成用户、课程、考试、房间、设置等全部数据（包括上传记录与观看统计）。
+会清空课程、章节、用户、学习记录等全部数据，只重建管理员账号、等级与默认设置。
 
 ## 飞牛 fnOS 安装包（.fpk）
 
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.15_x86.fpk
+release/liteclass_1.0.16_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.15_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.16_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.15_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.16_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。
 
-首次启动会自动初始化数据库并生成演示课程、音频与封面，账号与本地部署一致：`admin / admin`、`student / 123456`。分类默认为空，由管理员自行创建。
+首次启动会自动初始化数据库，只创建管理员账号 `admin / admin`；课程、分类等默认为空，由管理员自行创建。
 
 ### 数据目录
 
@@ -122,7 +121,7 @@ node fnos/build.mjs
 server/
   index.js          Express 入口（静态资源 + API + WebSocket）
   db.js             SQLite 表结构、设置读写、路径常量
-  seed.js           演示数据（课程、100 首曲目、考试、房间等）
+  seed.js           初始数据（管理员账号、等级、默认设置）
   auth.js           JWT 签发与校验
   media.js           文件类型、MIME 与预览模式（与 OfflineU 对齐）
   stream.js          合成音频 / Range 流式播放 / 文档预览 / 字幕转 WebVTT
@@ -192,9 +191,10 @@ release/            打包产物（.fpk，已加入 .gitignore）
 ### DLNA 投屏
 
 - 课程详情页点「投屏」→ 刷新设备（SSDP M-SEARCH）→ 选择电视；可勾选「兼容模式」强制服务端重编码为 H.264/AAC MPEG-TS 实时流，默认按 ffprobe 结果自动判断。
-- 投屏后由服务端维护单一会话：每 3 秒读取设备位置、每 15 秒回写观看进度、播完自动推送下一节音视频；全局投屏条支持播放/暂停/拖动/停止，切换页面也不会中断。
+- 投屏后由服务端维护单一会话：每 3 秒读取设备位置、每 15 秒回写观看进度、播完自动推送下一节音视频；全局投屏条支持播放/暂停/拖动/切换字幕/停止，切换页面也不会中断。
 - 电视通过带一次性 cast 令牌的 URL 拉流，无需浏览器 JWT；需要电视与 NAS 在同一局域网，反向代理场景请正确传递 `X-Forwarded-Host` / `X-Forwarded-Proto`。WebDAV/SMB 来源只提供原文件流，不做投屏转码。
 - 字幕：DIDL-Lite 里带 `sec:CaptionInfoEx` / `sec:CaptionInfo`（三星等）与一条 `text/srt` 的外挂 `<res>`（LG / 索尼 / 安卓电视），电视通过 `/api/dlna/subtitle/<id>.srt` 自行拉取，转码流从中间起播时字幕时间轴同步平移；电视不认外挂字幕时，可勾选「投屏时烧录字幕」，服务端把字幕烧进 MPEG-TS 流再推送。烧录需要带 libass 的 ffmpeg 与系统中文字体。
+- 投屏按播放器当前选中的字幕轨推送（视频内嵌字幕轨与外挂字幕都支持），有字幕时默认勾选「投屏时烧录字幕」，保证电视与 AirPlay / Cast 接力投屏也能看到字幕；投屏条上可随时切换字幕轨。
 
 ### 课程来源（WebDAV / SMB / 本地）
 

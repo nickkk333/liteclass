@@ -4,7 +4,7 @@ import { get } from "../db.js";
 import { resolveMaterialFile } from "../files.js";
 import { probe, ffmpegAvailable } from "../ffmpeg.js";
 import { burnStream, subtitleBurnFile } from "../transcode.js";
-import { issueCastToken, validCastToken, absoluteURL } from "../dlna.js";
+import { issueCastToken, validCastToken, absoluteURL, subtitleChoiceOf, embeddedSubtitleChoice } from "../dlna.js";
 
 // 「投屏时烧录字幕」给浏览器 / 接力投屏（AirPlay 视频接力、Chromecast 媒体投屏）用：
 // 服务端用 ffmpeg 把字幕烧进画面，输出 fMP4 实时流——设备自己拉流也能看到字幕。
@@ -12,14 +12,15 @@ import { issueCastToken, validCastToken, absoluteURL } from "../dlna.js";
 
 const router = Router();
 
-async function burnable(material) {
+async function burnable(material, subtitle = null, choice = "auto") {
+  if (choice === "off") return { error: ["已关闭字幕，无法烧录", 400] };
   const target = material && resolveMaterialFile(material);
   if (!target) return { error: ["章节不存在", 404] };
   if (target.remote) return { error: ["远程来源不支持烧录字幕", 501] };
   if (!ffmpegAvailable()) return { error: ["服务端未安装 ffmpeg，无法烧录字幕", 501] };
   const facts = await probe(target.path);
   if (!facts?.video) return { error: ["只有视频章节需要烧录字幕", 400] };
-  const subtitleFile = await subtitleBurnFile(material);
+  const subtitleFile = await subtitleBurnFile(material, subtitle);
   if (!subtitleFile) return { error: ["该章节没有可用字幕", 400] };
   return { target, facts, subtitleFile };
 }
@@ -29,7 +30,8 @@ router.get("/cast/burn/:id", async (req, res) => {
   if (!validCastToken(req.query.cast, id)) return res.status(401).type("text/plain").send("投屏令牌无效");
   const material = get("SELECT * FROM materials WHERE id = ?", id);
   try {
-    const result = await burnable(material);
+    const track = subtitleChoiceOf(req.query.track);
+    const result = await burnable(material, embeddedSubtitleChoice(track), track);
     if (result.error) return res.status(result.error[1]).type("text/plain").send(result.error[0]);
     burnStream(result.target, result.facts, Number(req.query.start) || 0, req, res, result.subtitleFile, "mp4");
   } catch (e) {
@@ -42,7 +44,8 @@ router.post("/cast/burn", requireAuth, async (req, res) => {
   const body = req.body || {};
   const material = get("SELECT * FROM materials WHERE id = ?", Number(body.material_id));
   try {
-    const result = await burnable(material);
+    const choice = subtitleChoiceOf(body.subtitle);
+    const result = await burnable(material, embeddedSubtitleChoice(choice), choice);
     if (result.error) return res.status(result.error[1]).json({ error: result.error[0] });
     const token = issueCastToken(material.id, req.user.id);
     const start = Math.max(0, Math.floor(Number(body.start_seconds) || 0));
@@ -50,7 +53,7 @@ router.post("/cast/burn", requireAuth, async (req, res) => {
       success: true,
       burned: true,
       start,
-      url: `${absoluteURL(req)}/api/cast/burn/${material.id}?cast=${token}&start=${start}`,
+      url: `${absoluteURL(req)}/api/cast/burn/${material.id}?cast=${token}&start=${start}&track=${choice}`,
     });
   } catch (e) {
     res.status(500).json({ error: e.message || String(e) });

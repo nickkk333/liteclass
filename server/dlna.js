@@ -170,22 +170,52 @@ function externalSubtitleTarget(material) {
   return resolveMaterialFile({ file_path: material.subtitle_path });
 }
 
-/** 本次投屏能附带的外挂字幕类型；null 表示没有可用字幕。 */
-function castSubtitle(material, facts) {
-  if (externalSubtitleTarget(material)) return { ext: ".srt", type: "srt", mime: "text/srt" };
-  if (pickTextTrack(facts) && ffmpegAvailable()) return { ext: ".srt", type: "srt", mime: "text/srt" };
+const isEmbeddedChoice = (choice) => /^e\d+$/.test(choice);
+
+/** 投屏字幕选择：auto（外挂优先）/ off / external / e<index> */
+export function subtitleChoiceOf(value) {
+  const choice = String(value || "auto");
+  if (choice === "off" || choice === "external") return choice;
+  return isEmbeddedChoice(choice) ? choice : "auto";
+}
+
+export function embeddedSubtitleChoice(value) {
+  const trackParam = String(value || "");
+  if (isEmbeddedChoice(trackParam)) return { from: "embedded", index: Number(trackParam.slice(1)) };
+  if (trackParam === "external") return { from: "external" };
   return null;
 }
 
-/** 电视拉取的字幕正文：外挂字幕 / 内嵌字幕轨，统一成 SRT。 */
-async function castSubtitleSRT(material, offsetSeconds = 0) {
-  const external = externalSubtitleTarget(material);
-  if (external) {
-    const [buffer] = await readCappedFile(external, 4 * 1024 * 1024);
-    return vttToSRT(convertSubtitleToVTT(external.path, subtitleText(buffer)), offsetSeconds);
+/** 本次投屏要附带的外挂字幕；null 表示不推字幕。 */
+function castSubtitle(material, facts, choice = "auto") {
+  if (choice === "off") return null;
+  const base = { ext: ".srt", type: "srt", mime: "text/srt" };
+  const external = !!externalSubtitleTarget(material);
+  if (choice === "external") return external ? { ...base, from: "external" } : null;
+  if (choice === "auto" && external) return { ...base, from: "external" };
+  const wantIndex = isEmbeddedChoice(choice) ? Number(choice.slice(1)) : null;
+  const track = wantIndex == null
+    ? pickTextTrack(facts)
+    : (facts?.subtitles || []).find((s) => s.text && Number(s.index) === wantIndex);
+  if (track && ffmpegAvailable()) return { ...base, from: "embedded", index: track.index };
+  return null;
+}
+
+/** 电视拉取的字幕正文：外挂字幕 / 指定内嵌轨，统一成 SRT。 */
+async function castSubtitleSRT(material, offsetSeconds = 0, subtitle = null) {
+  if (subtitle?.from !== "embedded") {
+    const external = externalSubtitleTarget(material);
+    if (external) {
+      const [buffer] = await readCappedFile(external, 4 * 1024 * 1024);
+      return vttToSRT(convertSubtitleToVTT(external.path, subtitleText(buffer)), offsetSeconds);
+    }
+    if (subtitle?.from === "external") return "";
   }
   const target = resolveMaterialFile(material);
   if (!target || target.remote) return "";
+  if (Number.isInteger(subtitle?.index)) {
+    return vttToSRT(await embeddedSubtitleVTT(target, subtitle.index), offsetSeconds);
+  }
   const track = pickTextTrack(await probe(target.path));
   if (!track) return "";
   return vttToSRT(await embeddedSubtitleVTT(target, track.index), offsetSeconds);
@@ -203,7 +233,7 @@ export async function subtitleHandler(req, res) {
   if (!material) return res.status(404).type("text/plain; charset=utf-8").send("章节不存在");
   const offset = Math.max(0, Number(req.query.from) || 0);
   try {
-    const srt = await castSubtitleSRT(material, offset);
+    const srt = await castSubtitleSRT(material, offset, embeddedSubtitleChoice(req.query.track));
     if (!srt) return res.status(404).type("text/plain; charset=utf-8").send("该章节没有可外挂的字幕");
     res.setHeader("Content-Type", "text/srt; charset=utf-8");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -235,7 +265,7 @@ export function absoluteURL(req) {
   return `${proto}://${host}`;
 }
 
-async function castTarget({ baseURL, material, startSeconds = 0, transcode = "auto", burn = false, userId }) {
+async function castTarget({ baseURL, material, startSeconds = 0, transcode = "auto", burn = false, subtitle = "auto", userId }) {
   const target = resolveMaterialFile(material);
   if (!target) throw new Error("章节文件不存在");
   const remote = !!target.remote;
@@ -243,7 +273,8 @@ async function castTarget({ baseURL, material, startSeconds = 0, transcode = "au
   const plan = remote
     ? { needs_transcode: false, transcode_available: false }
     : castPlan(facts, extOf(material.file_path || material.title), ffmpegAvailable());
-  const kind = castSubtitle(material, facts);
+  const choice = subtitleChoiceOf(subtitle);
+  const kind = castSubtitle(material, facts, choice);
   // 烧录：把字幕直接烧进画面再推流，电视不支持外挂字幕也能看到。
   if (burn) {
     if (remote) throw new Error("远程来源不支持烧录字幕");
@@ -257,18 +288,19 @@ async function castTarget({ baseURL, material, startSeconds = 0, transcode = "au
   if (converted && !ffmpegAvailable()) throw new Error("需要 ffmpeg 才能使用兼容转码流");
   const token = issueCastToken(material.id, userId);
   const offset = Math.max(0, Math.floor(startSeconds));
+  const trackQuery = kind?.from === "embedded" ? `&track=e${kind.index}` : "&track=external";
   const url = converted
-    ? `${baseURL}/api/dlna/stream?id=${material.id}&start=${offset}&cast=${token}${burned ? "&burn=1" : ""}`
+    ? `${baseURL}/api/dlna/stream?id=${material.id}&start=${offset}&cast=${token}${burned ? `&burn=1${trackQuery}` : ""}`
     : `${baseURL}/api/stream/${material.id}?cast=${token}`;
   const mime = converted
     ? (facts?.video ? "video/mp2t" : "audio/aac")
     : (mimeOf(material.file_path || material.title, material.mime_type || "application/octet-stream"));
   // 转码流是从 offset 处起播的，字幕时间轴也要一起平移，否则一开始就对不上。
   // 烧录模式下字幕已经在画面里，不再另外推送外挂字幕。
-  const subtitle = burned || !kind
+  const caption = burned || !kind
     ? null
-    : { ...kind, url: `${baseURL}/api/dlna/subtitle/${material.id}${kind.ext}?cast=${token}&from=${converted ? offset : 0}` };
-  return { url, mime, converted, burned, target, facts, startSeconds, plan, remote, subtitle };
+    : { ...kind, url: `${baseURL}/api/dlna/subtitle/${material.id}${kind.ext}?cast=${token}&from=${converted ? offset : 0}${trackQuery}` };
+  return { url, mime, converted, burned, target, facts, startSeconds, plan, remote, subtitle: caption, subtitleChoice: choice };
 }
 
 async function pushToDevice(device, info, material) {
@@ -336,6 +368,7 @@ export function sessionView() {
     state: session.state,
     converted: session.converted,
     burned: !!session.burned,
+    subtitle: session.subtitle || "auto",
     reported: session.reported,
     next_title: next?.title || "",
     next_material_id: next?.id || null,
@@ -353,15 +386,17 @@ async function startNext(s) {
   }
   saveProgress(s, s.duration || estimatePosition(s), true);
   // 上一集在烧录字幕时，下一集有字幕就继续烧录，没有就退回普通流。
+  const transcode = s.transcode || "auto";
   let info;
   try {
-    info = await castTarget({ baseURL: s.baseURL, material: next, startSeconds: 0, transcode: "auto", burn: !!s.burned, userId: s.userId });
+    info = await castTarget({ baseURL: s.baseURL, material: next, startSeconds: 0, transcode, burn: !!s.burned, subtitle: s.subtitle || "auto", userId: s.userId });
   } catch {
-    info = await castTarget({ baseURL: s.baseURL, material: next, startSeconds: 0, transcode: "auto", userId: s.userId });
+    info = await castTarget({ baseURL: s.baseURL, material: next, startSeconds: 0, transcode, subtitle: s.subtitle || "auto", userId: s.userId });
   }
   await pushToDevice(s.device, info, next);
   Object.assign(s, {
     materialId: next.id, title: next.title, converted: info.converted, burned: !!info.burned,
+    subtitle: info.subtitleChoice,
     startSeconds: 0, duration: Number(next.duration) || 0, startedAt: Date.now(),
     pausedFor: 0, state: "playing", realPosition: 0, realAt: 0, reported: false,
     lastSaved: 0,
@@ -400,7 +435,7 @@ function ensureWatchdog() {
   if (!watchdog) watchdog = setInterval(tick, 3000);
 }
 
-export async function startCast({ req, udn, materialId, startSeconds = 0, transcode = "auto", burn = false, duration = 0, userId }) {
+export async function startCast({ req, udn, materialId, startSeconds = 0, transcode = "auto", burn = false, subtitle = "auto", duration = 0, userId }) {
   if (!dlnaEnabled()) throw new Error("投屏已在服务端关闭");
   const material = get("SELECT * FROM materials WHERE id = ?", Number(materialId));
   if (!material) throw new Error("章节不存在");
@@ -409,13 +444,14 @@ export async function startCast({ req, udn, materialId, startSeconds = 0, transc
   }
   const device = await lookupDevice(udn);
   const info = await castTarget({
-    baseURL: absoluteURL(req), material, startSeconds, transcode, burn, userId,
+    baseURL: absoluteURL(req), material, startSeconds, transcode, burn, subtitle, userId,
   });
   await pushToDevice(device, info, material);
   session = {
     udn: device.udn, device, userId, courseId: material.course_id,
     materialId: material.id, title: material.title, baseURL: absoluteURL(req),
-    converted: info.converted, burned: !!info.burned, startSeconds: info.startSeconds,
+    converted: info.converted, burned: !!info.burned, subtitle: info.subtitleChoice, transcode,
+    startSeconds: info.startSeconds,
     duration: Number(duration) || info.facts?.duration || Number(material.duration) || 0,
     startedAt: Date.now(), pausedFor: 0, state: "playing",
     realPosition: 0, realAt: 0, reported: false, lastSaved: 0, busy: false,
@@ -424,7 +460,7 @@ export async function startCast({ req, udn, materialId, startSeconds = 0, transc
   return sessionView();
 }
 
-export async function control({ req, action, position = 0 }) {
+export async function control({ req, action, position = 0, subtitle = "auto" }) {
   if (!session) throw new Error("当前没有投屏会话");
   const s = session;
   const device = s.device;
@@ -437,11 +473,25 @@ export async function control({ req, action, position = 0 }) {
     if (watchdog) { clearInterval(watchdog); watchdog = null; }
   } else if (action === "next") {
     await startNext(s);
+  } else if (action === "subtitle") {
+    // 换字幕轨需要重新推送：字幕由电视按 URL 独立拉取，切换后要重新加载一次。
+    const material = get("SELECT * FROM materials WHERE id = ?", s.materialId);
+    const seconds = Math.max(0, Math.floor(estimatePosition(s)));
+    const info = await castTarget({
+      baseURL: absoluteURL(req), material, startSeconds: seconds,
+      transcode: s.transcode || "auto", burn: !!s.burned, subtitle, userId: s.userId,
+    });
+    await pushToDevice(device, info, material);
+    Object.assign(s, {
+      converted: info.converted, burned: !!info.burned, subtitle: info.subtitleChoice,
+      startSeconds: seconds, startedAt: Date.now(),
+      realPosition: seconds, realAt: Date.now(), reported: true,
+    });
   } else if (action === "seek") {
     const seconds = Math.max(0, Number(position) || 0);
     if (s.converted) {
       const material = get("SELECT * FROM materials WHERE id = ?", s.materialId);
-      const info = await castTarget({ baseURL: absoluteURL(req), material, startSeconds: seconds, transcode: "on", burn: !!s.burned, userId: s.userId });
+      const info = await castTarget({ baseURL: absoluteURL(req), material, startSeconds: seconds, transcode: "on", burn: !!s.burned, subtitle: s.subtitle || "auto", userId: s.userId });
       await pushToDevice(device, info, material);
       s.startSeconds = seconds;
       s.startedAt = Date.now();
@@ -478,7 +528,7 @@ export async function streamHandler(req, res) {
   // burn=1：把字幕烧进画面再推给电视（电视不支持外挂字幕时用）。
   let burn = "";
   if (req.query.burn === "1" && facts.video) {
-    try { burn = await subtitleBurnFile(material); } catch { burn = ""; }
+    try { burn = await subtitleBurnFile(material, embeddedSubtitleChoice(req.query.track)); } catch { burn = ""; }
   }
   castStream(target, facts, Number(req.query.start) || 0, req, res, burn || "");
 }

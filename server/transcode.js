@@ -341,12 +341,13 @@ export function pickTextTrack(facts) {
 /**
  * 烧录投屏用的字幕文件：外挂字幕或内嵌文本轨统一转成 SRT 落到缓存目录，
  * 返回磁盘路径（libass 的 subtitles 滤镜直接读文件）；没有可用字幕返回 ""。
+ * subtitle: null / { from: "external" } / { from: "embedded", index }，不传时自动挑轨。
  */
-export async function subtitleBurnFile(material) {
+export async function subtitleBurnFile(material, subtitle = null) {
   if (!material) return "";
   let vtt = "";
   let key = "";
-  if (material.subtitle_path) {
+  if (material.subtitle_path && subtitle?.from !== "embedded") {
     const external = resolveMaterialFile({ file_path: material.subtitle_path });
     if (external) {
       const [buffer] = await readCappedFile(external, 4 * 1024 * 1024);
@@ -357,7 +358,10 @@ export async function subtitleBurnFile(material) {
   if (!vtt) {
     const target = resolveMaterialFile(material);
     if (!target || target.remote) return "";
-    const track = pickTextTrack(await probe(target.path));
+    const facts = await probe(target.path);
+    const track = Number.isInteger(subtitle?.index)
+      ? (facts?.subtitles || []).find((s) => s.text && s.index === subtitle.index)
+      : pickTextTrack(facts);
     if (!track) return "";
     vtt = await embeddedSubtitleVTT(target, track.index);
     key = `emb|${target.path}|${track.index}`;

@@ -107,6 +107,8 @@ export default function CourseDetail() {
   const ModeIcon = PLAY_MODES.find(([key]) => key === mode)?.[2] || ListMusic;
   const modeLabel = PLAY_MODES.find(([key]) => key === mode)?.[1] || "顺序播放";
   const fullActive = isFull || fauxFull;
+  // 投屏转码跟随播放器右上角的播放方式：服务端转码 → 强制转码流，原码播放 → 直连原始流。
+  const castTranscode = mediaMode === "video" ? (sourceChoice === "server" ? "on" : sourceChoice === "raw" ? "off" : "auto") : "auto";
   // 投屏烧录模式：把播放源换成服务端烧好字幕的转码流（投屏菜单里勾选后生效）。
   const [castBurnUrl, setCastBurnUrl] = useState("");
   const playback = usePlaybackSource({
@@ -470,7 +472,6 @@ export default function CourseDetail() {
         </div>
         <div className="head-title">{course.title}</div>
         <div className="head-actions">
-          <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} onCastSource={applyCastSource} />
           <button className="icon-btn" title="发起一起看" onClick={() => navigate("/courses?tab=rooms")}><SquarePlay size={17} /></button>
           <button className="icon-btn" title="导出笔记" onClick={exportNotes}><Download size={17} /></button>
           <button className={`icon-btn ${course.is_favorited ? "primary" : ""}`} title="收藏" onClick={toggleFavorite}>
@@ -676,7 +677,7 @@ export default function CourseDetail() {
                       </>
                     )}
                   </div>
-                  <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} onCastSource={applyCastSource} compact />
+                  <CastMenu material={current} mode={mediaMode} mediaRef={audioRef} onCastSource={applyCastSource} transcode={castTranscode} subtitleTrack={subtitle.selected} compact />
                   <button
                     className={`icon-btn player-dir-btn ${dirOpen ? "active" : ""}`}
                     onClick={() => setDirOpen((v) => !v)}

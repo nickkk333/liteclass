@@ -8,13 +8,13 @@ import { useToast } from "./ui.jsx";
  * 1) 系统投屏：AirPlay（Safari / iPhone / iPad）、Chromecast / Miracast 等由浏览器与系统面板提供；
  * 2) 局域网电视：服务端 SSDP 发现 DLNA 设备后直接推送。
  */
-export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSource, compact = false }) {
+export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSource, transcode = "auto", subtitleTrack = "auto", compact = false }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [devices, setDevices] = useState([]);
   const [plan, setPlan] = useState(null);
-  const [compat, setCompat] = useState(false);
-  const [burn, setBurn] = useState(false);
+  // 有字幕时默认烧录，保证电视 / 接力投屏一定能看到字幕；不需要可在菜单里取消。
+  const [burn, setBurn] = useState(true);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -72,40 +72,44 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
   };
 
   /** AirPlay / Cast / Miracast：交给浏览器或系统的投屏面板。 */
-  const castNative = async () => {
+  const castNative = async (kind = "auto") => {
     const el = mediaEl();
     setError("");
     if (!el) { setError("当前章节暂不支持系统投屏"); return; }
+    const canAirplay = typeof el.webkitShowPlaybackTargetPicker === "function";
+    const canRemote = Boolean(el.remote?.prompt);
+    if (kind === "airplay" && !canAirplay) { setError("当前浏览器不支持 AirPlay，请用 Safari / iPhone / iPad 播放后投屏。"); return; }
+    if (kind === "remote" && !canRemote) { setError("当前浏览器不支持系统投屏；Miracast 请用系统投屏面板（Windows 按 Win+K）。"); return; }
     let burned = false;
     try {
       // 勾了烧录字幕：先把播放源换成服务端烧好字幕的转码流，设备接力拉流时才有字幕。
-      if (burn && hasSubtitle) {
+      if (wantBurn) {
         if (!onCastSource) throw new Error("当前页面不支持烧录投屏");
         if (plan?.ffmpeg_available === false) throw new Error("服务端未安装 ffmpeg，无法烧录字幕");
         setBusy("burn");
         const info = await api("/cast/burn", {
           method: "POST",
-          body: { material_id: material.id, start_seconds: Number(material.position) || 0 },
+          body: { material_id: material.id, start_seconds: Number(material.position) || 0, subtitle: subtitleTrack },
         });
         await onCastSource(info.url);
         burned = true;
         setBusy("");
       }
-      if (typeof el.webkitShowPlaybackTargetPicker === "function") {
+      if (canAirplay && kind !== "remote") {
         el.webkitShowPlaybackTargetPicker();
         return;
       }
-      if (el.remote?.prompt) {
+      if (canRemote) {
         await el.remote.prompt();
         return;
       }
-      setError("当前浏览器不支持系统投屏。AirPlay 请用 Safari / iPhone / iPad；Miracast 请使用系统投屏（Windows 按 Win+K）。");
+      setError("当前浏览器不支持系统投屏；Miracast 请用系统投屏面板（Windows 按 Win+K）。");
     } catch (e) {
       if (burned) onCastSource?.("");
       if (e?.name === "NotAllowedError") {
-        setError("浏览器没有打开投屏面板：可能没有可用的投屏设备，或需要直接点击投屏按钮。Miracast 请用系统投屏（Windows 按 Win+K），也可使用下方 DLNA 电视。");
+        setError("没有可用的投屏设备，或浏览器拦截了投屏面板。");
       } else if (e?.name === "NotSupportedError") {
-        setError("没有检测到可投屏设备。AirPlay 需与 Apple TV / 支持 AirPlay 的电视在同一 Wi-Fi；Miracast 请先打开系统投屏面板。");
+        setError("未检测到投屏设备；Miracast 请用系统投屏面板（Windows 按 Win+K）。");
       } else if (e?.name !== "AbortError") {
         setError(e?.message || "调起系统投屏失败");
       }
@@ -125,8 +129,9 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
           material_id: material.id,
           start_seconds: Number(material.position) || 0,
           duration: Number(material.duration) || 0,
-          transcode: compat ? "on" : "auto",
-          burn: burn && hasSubtitle,
+          transcode,
+          burn: wantBurn,
+          subtitle: subtitleTrack,
         },
       });
       toast(`已投屏到 ${device.name}`);
@@ -136,8 +141,10 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
     finally { setBusy(""); }
   };
 
-  const nativeLabel = native.airplay ? "AirPlay 投屏" : "系统投屏（Cast / Miracast）";
+  const nativeLabel = "系统投屏";
   const hasSubtitle = Boolean(material?.has_subtitle || plan?.has_subtitle);
+  // 播放器里关掉字幕时不烧录，其余情况默认按当前选中的字幕轨烧制。
+  const wantBurn = burn && hasSubtitle && subtitleTrack !== "off";
 
   return (
     <div className="cast-menu-wrap">
@@ -164,7 +171,7 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
               <strong>{nativeLabel}</strong>
               {native.state === "connected" ? <span className="tag tiny">已连接</span> : null}
             </div>
-            {hasSubtitle ? (
+            {hasSubtitle && subtitleTrack !== "off" ? (
               <label className="check-row small">
                 <input
                   type="checkbox"
@@ -175,50 +182,36 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
                 投屏时烧录字幕（服务端把字幕烧进画面，需 ffmpeg）
               </label>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={castNative}
-              disabled={(!native.airplay && !native.remote) || busy === "burn"}
-            >
-              {busy === "burn"
-                ? "正在准备烧录流…"
-                : native.airplay ? "打开 AirPlay" : native.remote ? "打开系统投屏" : "系统投屏不可用"}
-            </button>
-            <div className="muted tiny">
-              {native.airplay
-                ? "通过 AirPlay 投到 Apple TV 或支持 AirPlay 的电视，需与电视处于同一 Wi-Fi。"
-                : native.remote
-                  ? "调用浏览器/系统的投屏面板，可使用 Chromecast、Miracast（Windows 按 Win+K）等设备。"
-                  : "当前浏览器没有开放系统投屏接口，可改用下方局域网电视或换用 Safari / Chrome。"}
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {native.airplay ? (
+                <button type="button" className="btn btn-sm" onClick={() => castNative("airplay")} disabled={busy === "burn"}>
+                  {busy === "burn" ? "正在准备烧录流…" : "AirPlay 投屏"}
+                </button>
+              ) : null}
+              {native.remote ? (
+                <button type="button" className="btn btn-sm" onClick={() => castNative("remote")} disabled={busy === "burn"}>
+                  {busy === "burn" ? "正在准备烧录流…" : "系统投屏（Cast / Miracast）"}
+                </button>
+              ) : null}
+              {!native.airplay && !native.remote ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setError("当前浏览器不支持系统投屏；Miracast 请用系统投屏面板（Windows 按 Win+K），或使用下方 DLNA 电视。")}
+                >
+                  系统投屏（Cast / Miracast）
+                </button>
+              ) : null}
             </div>
-            {hasSubtitle ? (
-              <div className="muted tiny">
-                镜像投屏（Miracast / AirCast / 标签页投射）会连播放器画面上的字幕一起投过去；
-                由设备自己拉流的「接力」投屏请勾选上面的「投屏时烧录字幕」。
-              </div>
-            ) : null}
           </div>
 
           <div className="cast-divider">局域网电视（DLNA）</div>
           {plan?.dlna_enabled === false ? (
             <div className="muted small">服务端已关闭 DLNA 投屏（LITECLASS_DLNA=off）。</div>
           ) : null}
-          {plan?.needs_transcode ? (
-            <div className="muted small">该文件编码可能不被电视直接支持，会自动使用兼容转码流。</div>
-          ) : null}
           {plan?.needs_transcode && plan?.ffmpeg_available === false ? (
-            <div className="hint small">服务端未找到 ffmpeg，兼容转码不可用，请改用直接播放。</div>
+            <div className="hint small">服务端未找到 ffmpeg，无法转码，请在播放器右上角改用原码播放。</div>
           ) : null}
-          {plan?.has_subtitle ? (
-            <div className="muted small">
-              字幕会作为外挂字幕推送给电视；电视不显示时，勾选上方「投屏时烧录字幕」把字幕直接烧进画面。
-            </div>
-          ) : null}
-          <label className="check-row small">
-            <input type="checkbox" checked={compat} onChange={(e) => setCompat(e.target.checked)} />
-            兼容模式（强制服务端转码，音画不同步/无法播放时勾选）
-          </label>
           {error ? <div className="hint small">{error}</div> : null}
           <div className="cast-devices">
             {devices.length ? devices.map((device) => (

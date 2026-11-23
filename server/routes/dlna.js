@@ -36,6 +36,7 @@ router.post("/dlna/cast", requireAuth, guard, async (req, res) => {
       startSeconds: Number(body.start_seconds) || 0,
       transcode: String(body.transcode || "auto"),
       burn: body.burn === true || body.burn === "on",
+      subtitle: String(body.subtitle || "auto"),
       duration: Number(body.duration) || 0,
       userId: req.user.id,
     });
@@ -46,7 +47,12 @@ router.post("/dlna/cast", requireAuth, guard, async (req, res) => {
 router.post("/dlna/control", requireAuth, guard, async (req, res) => {
   const body = req.body || {};
   try {
-    const view = await control({ req, action: String(body.action || ""), position: Number(body.position) || 0 });
+    const view = await control({
+      req,
+      action: String(body.action || ""),
+      position: Number(body.position) || 0,
+      subtitle: String(body.subtitle || "auto"),
+    });
     res.json({ success: true, ...view });
   } catch (e) { fail(res, e, 400); }
 });
