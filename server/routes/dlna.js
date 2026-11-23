@@ -11,7 +11,10 @@ function guard(req, res, next) {
   next();
 }
 
-const fail = (res, e, status = 502) => res.status(status).json({ error: e.message || String(e) });
+const fail = (res, e, status = 502) => {
+  console.error("[dlna]", e?.message || e);
+  res.status(status).json({ error: e.message || String(e) });
+};
 
 // 电视直接拉取：不带 JWT，靠一次性 cast 令牌。
 router.get("/dlna/stream", streamHandler);

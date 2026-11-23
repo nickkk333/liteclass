@@ -477,15 +477,21 @@ export async function control({ req, action, position = 0, subtitle = "auto" }) 
     // 换字幕轨需要重新推送：字幕由电视按 URL 独立拉取，切换后要重新加载一次。
     const material = get("SELECT * FROM materials WHERE id = ?", s.materialId);
     const seconds = Math.max(0, Math.floor(estimatePosition(s)));
-    const info = await castTarget({
-      baseURL: absoluteURL(req), material, startSeconds: seconds,
-      transcode: s.transcode || "auto", burn: !!s.burned, subtitle, userId: s.userId,
-    });
-    await pushToDevice(device, info, material);
+    let info;
+    try {
+      info = await castTarget({
+        baseURL: absoluteURL(req), material, startSeconds: seconds,
+        transcode: s.transcode || "auto", burn: !!s.burned, subtitle, userId: s.userId,
+      });
+      await pushToDevice(device, info, material);
+    } catch (e) {
+      throw new Error(`切换字幕失败：${e.message || e}`);
+    }
     Object.assign(s, {
       converted: info.converted, burned: !!info.burned, subtitle: info.subtitleChoice,
       startSeconds: seconds, startedAt: Date.now(),
       realPosition: seconds, realAt: Date.now(), reported: true,
+      pausedFor: 0, lastSaved: seconds, state: "playing",
     });
   } else if (action === "seek") {
     const seconds = Math.max(0, Number(position) || 0);

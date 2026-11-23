@@ -13,8 +13,9 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
   const [open, setOpen] = useState(false);
   const [devices, setDevices] = useState([]);
   const [plan, setPlan] = useState(null);
-  // 有字幕时默认烧录，保证电视 / 接力投屏一定能看到字幕；不需要可在菜单里取消。
-  const [burn, setBurn] = useState(true);
+  // 默认不烧录：DLNA 直接推送外挂字幕，投屏可以拖动、切换字幕也只需重新推送一次；
+  // 电视不认外挂字幕（或走 AirPlay / Cast 接力投屏）时，再勾选烧录。
+  const [burn, setBurn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -179,7 +180,7 @@ export default function CastMenu({ material, mode, mediaRef, onCasted, onCastSou
                   onChange={(e) => setBurn(e.target.checked)}
                   disabled={plan?.ffmpeg_available === false}
                 />
-                投屏时烧录字幕（服务端把字幕烧进画面，需 ffmpeg）
+                烧录字幕（电视不显示外挂字幕、或接力投屏时使用，需 ffmpeg）
               </label>
             ) : null}
             <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
