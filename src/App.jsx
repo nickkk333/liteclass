@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
   allow_course_creation: true,
   enable_transcoding: true,
   show_watch_ranking_on_home: false,
-  version: "1.1.6",
+  version: "",
 };
 
 export function AuthProvider({ children }) {

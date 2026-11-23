@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(__dirname, "..");
+// 应用版本以 package.json 为准，与 fpk 安装包 / 发布标签保持一致。
+export const APP_VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version || "0.0.0";
+  } catch { return "0.0.0"; }
+})();
 export const DATA_DIR = process.env.LITECLASS_DATA_DIR
   ? path.resolve(process.env.LITECLASS_DATA_DIR)
   : path.join(ROOT, "data");
@@ -232,6 +238,6 @@ export function publicSettings() {
     allow_course_creation: setting("allow_course_creation", "true") === "true",
     enable_transcoding: setting("enable_transcoding", "true") === "true",
     show_watch_ranking_on_home: setting("show_watch_ranking_on_home", "false") === "true",
-    version: setting("version", "1.1.6"),
+    version: APP_VERSION,
   };
 }

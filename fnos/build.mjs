@@ -202,6 +202,9 @@ function ensureFfmpegRuntime() {
 
 function main() {
   const manifest = readManifest();
+  // 版本号以 package.json 为准，避免 manifest 忘记改版本导致安装包名与应用内版本号不变。
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  if (pkg.version) manifest.version = pkg.version;
   log(`打包 ${manifest.appname} ${manifest.version} (${manifest.platform})`);
 
   log("构建前端 ...");
@@ -211,6 +214,11 @@ function main() {
   rmrf(path.join(BUILD, "liteclass"));
   fs.mkdirSync(APP_DIR, { recursive: true });
   copyDir(SKELETON, path.join(BUILD, "liteclass"));
+  const manifestPath = path.join(BUILD, "liteclass", "manifest");
+  fs.writeFileSync(
+    manifestPath,
+    fs.readFileSync(manifestPath, "utf8").replace(/^(\s*version\s*=\s*).*$/m, (_line, prefix) => `${prefix}${manifest.version}`),
+  );
 
   for (const dir of ["app/www", "app/server"]) {
     fs.rmSync(path.join(BUILD, "liteclass", dir), { recursive: true, force: true });

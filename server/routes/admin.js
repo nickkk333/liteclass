@@ -2,14 +2,15 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
-import { all, get, run, now, publicSettings, setSetting, setting } from "../db.js";
+// 版本号由 publicSettings() 统一返回（来自 package.json）。
+import { all, get, run, now, publicSettings, setSetting } from "../db.js";
 import { requireAuth, requireAdmin } from "../auth.js";
 import { ffmpegAvailable } from "../ffmpeg.js";
 
 const router = Router();
 
 router.get("/settings", requireAuth, requireAdmin, (req, res) =>
-  res.json({ ...publicSettings(), version: setting("version", "1.1.6"), ffmpeg_available: ffmpegAvailable() }));
+  res.json({ ...publicSettings(), ffmpeg_available: ffmpegAvailable() }));
 
 router.put("/settings", requireAuth, requireAdmin, (req, res) => {
   const allowed = ["allow_registration", "allow_course_creation",

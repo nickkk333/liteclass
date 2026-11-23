@@ -16,7 +16,7 @@ export default function AboutView({ onBack }) {
         </div>
 
         <div className="card" style={{ padding: "6px 18px", marginTop: 16 }}>
-          <div className="about-meta"><span className="muted">当前版本</span><span>v{settings.version}</span></div>
+          <div className="about-meta"><span className="muted">当前版本</span><span>{settings.version ? `v${settings.version}` : "—"}</span></div>
           <div className="about-meta"><span className="muted">开发者</span><span>落地长安</span></div>
           <div className="about-meta"><span className="muted">项目地址</span><span>github.com/liteclass</span></div>
         </div>
