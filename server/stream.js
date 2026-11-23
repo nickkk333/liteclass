@@ -86,8 +86,8 @@ router.get("/stream/:id", async (req, res) => {
   const target = resolveMaterialFile(material);
   if (target) {
     try {
-      // 浏览器缓存 MP4 已生成时直接替换原始容器（电视的原文件投屏跳过此步）
-      if (!cast && !req.query.download && await serveBrowser(target, req, res)) return;
+      // 浏览器缓存 MP4 已生成时直接替换原始容器（电视的原文件投屏、raw=1 原码播放跳过此步）
+      if (!cast && !req.query.download && !req.query.raw && await serveBrowser(target, req, res)) return;
       const stat = await fileStat(target);
       const range = readRange(req, stat.size);
       const ext = extOf(target.path);

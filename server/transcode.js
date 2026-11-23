@@ -144,8 +144,8 @@ async function trimCache() {
 
 const canStreamHLS = (facts) => !!facts?.video && facts.duration > 0 && !!binaries().ffprobe;
 
-/** /api/media/status：direct / hls / remux / raw。 */
-export async function mediaStatus(target, { materialId, token = "", hls = true } = {}) {
+/** /api/media/status：direct / hls / remux / raw。start=false 只判定，不启动后台任务。 */
+export async function mediaStatus(target, { materialId, token = "", hls = true, start = true } = {}) {
   const base = { mode: "raw", ready: true, preparing: false, hls_ready: false, needs_reencode: false };
   if (!target || target.remote) return { ...base, remote: !!target?.remote };
 
@@ -153,10 +153,11 @@ export async function mediaStatus(target, { materialId, token = "", hls = true }
   const stat = await fileStat(target);
   const facts = await probe(target.path);
   const playable = browserPlayable(facts);
-  if (playable) return { ...base, mode: "direct", mime: playable };
+  const fileInfo = { size: stat.size, duration: facts?.duration || 0 };
+  if (playable) return { ...base, ...fileInfo, mode: "direct", mime: playable };
   const info = facts
-    ? { duration: facts.duration, video_codec: facts.video?.codec || "", audio_codec: facts.audio?.codec || "", needs_transcode: true }
-    : {};
+    ? { ...fileInfo, video_codec: facts.video?.codec || "", audio_codec: facts.audio?.codec || "", needs_transcode: true }
+    : fileInfo;
   if (setting("enable_transcoding", "true") === "false") {
     return facts ? { ...base, ...info, transcoding_disabled: true } : base;
   }
@@ -165,12 +166,12 @@ export async function mediaStatus(target, { materialId, token = "", hls = true }
 
   const key = cacheKey(target, stat);
   const needsReencode = !!facts.video && !HLS_VIDEO_CODECS.has(facts.video.codec);
-  const common = { duration: facts.duration, video_codec: facts.video?.codec || "", needs_reencode: needsReencode };
+  const common = { size: stat.size, duration: facts.duration, video_codec: facts.video?.codec || "", audio_codec: facts.audio?.codec || "", needs_reencode: needsReencode };
 
   if (hls && canStreamHLS(facts)) {
     const idx = await indexFor(key, stat);
     const jobKey = `hls-index:${key}`;
-    if (!idx && !jobs.has(jobKey)) runJob(jobKey, () => buildIndex(target, stat, facts, key)).catch(() => {});
+    if (!idx && start && !jobs.has(jobKey)) runJob(jobKey, () => buildIndex(target, stat, facts, key)).catch(() => {});
     return {
       ...base, ...common, mode: "hls", hls_ready: !!idx,
       hls_url: `/api/hls/playlist.m3u8?id=${materialId}&token=${encodeURIComponent(token)}`,
@@ -180,7 +181,7 @@ export async function mediaStatus(target, { materialId, token = "", hls = true }
 
   const ready = remuxReady(target, stat, key);
   const jobKey = `remux:${key}`;
-  if (!ready && !jobs.has(jobKey)) runJob(jobKey, () => buildRemux(target, facts, key)).catch(() => {});
+  if (!ready && start && !jobs.has(jobKey)) runJob(jobKey, () => buildRemux(target, facts, key)).catch(() => {});
   const error = failures.get(jobKey) || "";
   return { ...base, ...common, mode: "remux", ready, preparing: !ready && !error, error };
 }

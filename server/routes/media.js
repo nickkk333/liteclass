@@ -30,6 +30,8 @@ router.get("/media/status/:id", async (req, res) => {
   try {
     const status = await mediaStatus(target, {
       materialId: material.id, token: tokenOf(req), hls: req.query.hls !== "0",
+      // probe=1：只判定播放方式，不启动 HLS 索引 / 重封装任务（供播放器先询问用户）
+      start: req.query.probe !== "1",
     });
     res.setHeader("Cache-Control", "no-store");
     res.json(status);

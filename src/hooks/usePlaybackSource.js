@@ -8,8 +8,18 @@ const HLS_RETRIES = 20;
 const HLS_RETRY_DELAY = 5000;
 const POLL_INTERVAL = 2000;
 
-export default function usePlaybackSource({ mediaRef, materialId, enabled, streamUrl, autoPlayRef, overrideUrl = "" }) {
-  const [state, setState] = useState({ mode: "direct", preparing: false, error: "", notice: "" });
+/**
+ * sourceChoice："" 未决定（需要转码时弹窗询问）/ "server" 服务端转码 / "raw" 原码直连。
+ * askChoice：视频类章节才询问，音频章节保持自动决策。
+ */
+export default function usePlaybackSource({
+  mediaRef, materialId, enabled, streamUrl, autoPlayRef, overrideUrl = "",
+  sourceChoice = "", askChoice = true,
+}) {
+  // state.for 记录这份判定属于哪个章节：换章节的第一帧还没跑新判定时，
+  // 绝不能拿上一章的状态去拼 src（否则会先把原始大文件/旧转码流拉下来）。
+  const [state, setState] = useState({ for: undefined, mode: "loading", preparing: true, error: "", notice: "" });
+  const [needsTranscode, setNeedsTranscode] = useState(false);
   const [reload, setReload] = useState(0);
   const hlsRef = useRef(null);
   const pollRef = useRef(null);
@@ -27,20 +37,25 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
 
   useEffect(() => {
     const seq = ++seqRef.current;
+    const setS = (next) => setState({ for: materialId, preparing: false, error: "", ...next });
     clearTimers();
     retryRef.current = 0;
     fallbackingRef.current = false;
     if (!enabled || !materialId) {
-      setState({ mode: "direct", preparing: false, error: "" });
+      setS({ mode: "direct" });
+      setNeedsTranscode(false);
       return undefined;
     }
     // 投屏烧录流：直接当普通 <video src> 播（fMP4），不参与 HLS / remux 状态机。
     if (overrideUrl) {
-      setState({ mode: "burn", preparing: false, error: "" });
+      setS({ mode: "burn" });
+      setNeedsTranscode(false);
       return undefined;
     }
     const alive = () => seq === seqRef.current;
     const status = (hls = true) => api(`/media/status/${materialId}${hls ? "" : "?hls=0"}`);
+    // probe=1 只做判定，不启动 HLS 索引 / 重封装任务，避免用户还没选就白跑转码。
+    const probe = () => api(`/media/status/${materialId}?probe=1`);
 
     const playIfNeeded = () => {
       const el = mediaRef?.current;
@@ -53,7 +68,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
       if (!el) return;
       if (el.canPlayType && el.canPlayType("application/vnd.apple.mpegurl")) {
         el.src = url;
-        setState({ mode: "hls", preparing: false, error: "" });
+        setS({ mode: "hls" });
         playIfNeeded();
         return;
       }
@@ -71,7 +86,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
         player.attachMedia(el);
         player.on(Hls.Events.MANIFEST_PARSED, () => {
           if (!alive()) return;
-          setState({ mode: "hls", preparing: false, error: "" });
+          setS({ mode: "hls" });
           playIfNeeded();
         });
         player.on(Hls.Events.ERROR, (_event, data) => {
@@ -91,10 +106,10 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
       if (hls && s.mode === "hls") {
         if (s.error) { fallback(); return; }
         if (s.hls_ready && s.hls_url) {
-          setState({ mode: "hls", preparing: false, error: "" });
+          setS({ mode: "hls" });
           attachHls(s.hls_url);
         } else {
-          setState({ mode: "hls", preparing: true, error: "" });
+          setS({ mode: "hls", preparing: true });
           if (!pollRef.current) {
             pollRef.current = setInterval(async () => {
               try {
@@ -104,7 +119,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
                 if (next.error) { clearTimers(); fallback(); return; }
                 if (next.hls_ready && next.hls_url) {
                   clearInterval(pollRef.current); pollRef.current = null;
-                  setState({ mode: "hls", preparing: false, error: "" });
+                  setS({ mode: "hls" });
                   attachHls(next.hls_url);
                 }
               } catch {}
@@ -114,13 +129,13 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
         return;
       }
       if (s.mode === "remux") {
-        if (s.error) { setState({ mode: "remux", preparing: false, error: s.error }); return; }
+        if (s.error) { setS({ mode: "remux", error: s.error }); return; }
         if (s.ready) {
-          setState({ mode: "remux", preparing: false, error: "" });
+          setS({ mode: "remux" });
           setReload((v) => v + 1);
           playIfNeeded();
         } else {
-          setState({ mode: "remux", preparing: true, error: "" });
+          setS({ mode: "remux", preparing: true });
           if (!pollRef.current) {
             pollRef.current = setInterval(async () => {
               try {
@@ -128,7 +143,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
                 if (!alive()) return;
                 if (next.ready || next.error) {
                   clearInterval(pollRef.current); pollRef.current = null;
-                  setState({ mode: "remux", preparing: false, error: next.error || "" });
+                  setS({ mode: "remux", error: next.error || "" });
                   if (next.ready) { setReload((v) => v + 1); playIfNeeded(); }
                 }
               } catch {}
@@ -137,7 +152,7 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
         }
         return;
       }
-      setState({ mode: s.mode || "direct", preparing: false, error: "",
+      setS({ mode: s.mode || "direct",
         notice: s.transcoding_disabled
           ? "该文件的音轨/容器浏览器无法直接播放，请到「管理 → 设置」开启视频转码。"
           : s.ffmpeg_missing
@@ -151,27 +166,65 @@ export default function usePlaybackSource({ mediaRef, materialId, enabled, strea
       clearTimers();
       if (!alive()) return;
       try { await applyStatus(await status(false), false); }
-      catch { setState({ mode: "direct", preparing: false, error: "" }); }
+      catch { setS({ mode: "direct" }); }
     };
     fallbackRef.current = fallback;
 
-    setState({ mode: "loading", preparing: true, error: "" });
-    status().then((s) => applyStatus(s)).catch(() => setState({ mode: "direct", preparing: false, error: "" }));
-    return () => { clearTimers(); };
-  }, [materialId, enabled, streamUrl, overrideUrl]);
+    const decide = async () => {
+      let s;
+      try { s = await probe(); }
+      catch { if (alive()) setS({ mode: "direct" }); return; }
+      if (!alive()) return;
+      const needs = s.mode === "hls" || s.mode === "remux";
+      setNeedsTranscode(needs);
+      if (!needs) { applyStatus(s); return; }
+      // 需要服务端处理：还没选过就让用户选（原码直连 / 服务端转码）。
+      if (!sourceChoice && askChoice) {
+        setS({ mode: "choose", choose: {
+          kind: s.mode,
+          size: s.size || 0,
+          duration: s.duration || 0,
+          video_codec: s.video_codec || "",
+          audio_codec: s.audio_codec || "",
+          needs_reencode: !!s.needs_reencode,
+        } });
+        return;
+      }
+      if (sourceChoice === "raw") {
+        setS({ mode: "raw" });
+        return;
+      }
+      setS({ mode: "loading", preparing: true });
+      try { await applyStatus(await status()); }
+      catch { if (alive()) setS({ mode: "direct" }); }
+    };
 
-  let src = streamUrl;
-  if (overrideUrl) src = overrideUrl;
-  else if (state.preparing || state.mode === "hls") src = undefined;
+    setS({ mode: "loading", preparing: true });
+    decide();
+    return () => { clearTimers(); };
+  }, [materialId, enabled, streamUrl, overrideUrl, sourceChoice, askChoice]);
+
+  // 判定不属于当前章节（刚切章节的第一帧）时不给 src，等新判定落地。
+  const decided = state.for === materialId;
+  let src;
+  if (!decided) src = undefined;
+  else if (overrideUrl) src = overrideUrl;
+  else if (state.preparing || state.mode === "hls" || state.mode === "choose") src = undefined;
   else if (state.mode === "remux") src = `${streamUrl}&remux=${reload}`;
+  // 原码播放：跳过服务端重封装缓存，确保拿到的就是原始文件。
+  else if (state.mode === "raw") src = `${streamUrl}&raw=1`;
+  else src = streamUrl;
 
   return {
     src,
-    elementKey: `${materialId}-${reload}${overrideUrl ? "-burn" : ""}`,
-    preparing: state.preparing,
-    mode: state.mode,
-    error: state.error,
-    notice: state.notice || "",
+    elementKey: `${materialId}-${reload}-${overrideUrl ? "burn" : sourceChoice || "auto"}`,
+    preparing: !decided || state.preparing,
+    mode: decided ? state.mode : "loading",
+    error: decided ? state.error : "",
+    notice: decided ? (state.notice || "") : "",
+    // 需要服务端转码时的选择信息（未决定时由页面弹窗询问）
+    choose: decided ? (state.choose || null) : null,
+    needsTranscode,
     // HLS 播放失败（MSE 追加失败 / 解码错误）时由页面调用：改走后端 MP4 重封装。
     fallback: () => fallbackRef.current(),
   };

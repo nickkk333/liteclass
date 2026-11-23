@@ -1414,6 +1414,27 @@ ul { margin: 0; padding: 0; list-style: none; }
   background: rgba(255, 255, 255, .16); color: #fff;
 }
 .cast-burn-exit:hover { background: rgba(255, 255, 255, .26); }
+/* 播放方式提示（原码播放 / 服务端转码），放在画面右上角，避开左上角的投屏烧录提示 */
+.play-source-hint {
+  position: absolute; right: 12px; top: 12px; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 7px 10px 7px 12px; border-radius: 10px;
+  background: rgba(15, 23, 42, .86); color: rgba(255, 255, 255, .92);
+  font-size: 12px; line-height: 1.5;
+}
+/* 播放方式选择弹窗 */
+.source-choice { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 12px; }
+.source-option {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center;
+  width: 100%; padding: 13px 15px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); color: var(--text); text-align: left; cursor: pointer;
+}
+.source-option svg { grid-row: span 2; color: var(--primary); }
+.source-option strong { font-size: 14px; }
+.source-option span { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.source-option:hover { border-color: var(--primary); }
+.source-option.primary { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 .party-preparing {
   position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
   padding: 7px 13px; border-radius: 999px; background: rgba(15, 23, 42, .8);

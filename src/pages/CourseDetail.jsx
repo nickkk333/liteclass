@@ -5,9 +5,9 @@ import {
   Volume2, VolumeX, Repeat1, Maximize, ListVideo, StickyNote, FolderOpen, MessageCircle,
   Music, FileText, Video, Trash2, Send, Clock, Download, Pencil, CornerDownRight,
   X, ListMusic, PauseCircle, CheckCircle2, Minimize, Check,
-  Image as ImageIcon, ExternalLink,
+  Image as ImageIcon, ExternalLink, Server, MonitorPlay,
 } from "lucide-react";
-import { api, fmtDuration, fmtDateTime, streamUrl, previewUrl, subtitleUrl } from "../api.js";
+import { api, fmtDuration, fmtDateTime, fmtSize, streamUrl, previewUrl, subtitleUrl } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { useToast, Empty, Avatar, Modal, Confirm, Spinner } from "../components/ui.jsx";
 import usePlaybackSource from "../hooks/usePlaybackSource.js";
@@ -29,6 +29,8 @@ const PLAY_MODES = [
   ["single", "播完暂停", PauseCircle],
 ];
 const PLAY_MODE_KEY = "liteclass.playMode";
+// 播放方式（服务端转码 / 原码直连）按课程记住，同一课程内换章节不再重复询问。
+const choiceKeyOf = (courseId) => `liteclass.playSource.${courseId}`;
 
 const TIMED_MODES = new Set(["video", "audio"]);
 const DOC_MODES = new Set(["pdf", "html", "text", "markdown", "office"]);
@@ -85,13 +87,18 @@ export default function CourseDetail() {
   const [modeMenu, setModeMenu] = useState(false);
   const [subMenu, setSubMenu] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
+  // 本课程记住的播放方式："" 未选（需要转码时询问）/ "server" 服务端转码 / "raw" 原码直连
+  const [sourceChoice, setSourceChoice] = useState(() => {
+    try { return sessionStorage.getItem(choiceKeyOf(id)) || ""; } catch { return ""; }
+  });
 
   const audioRef = useRef(null);
   const playerRef = useRef(null);
   const lastReport = useRef(0);
   const stateRef = useRef({ currentId, playing, time });
-  const playingRef = useRef(false);
-  playingRef.current = playing;
+  // 「想不想播」和「正在播」分开记：换章节后播放源可能先失败再回退到重封装流，
+  // 中途的 pause 事件只是加载失败，不代表用户想停，自动续播的意图必须保留。
+  const wantPlayRef = useRef(false);
 
   const current = useMemo(() => course?.materials?.find((m) => m.id === currentId) || null, [course, currentId]);
   const currentIndex = useMemo(() => course?.materials?.findIndex((m) => m.id === currentId) ?? -1, [course, currentId]);
@@ -107,9 +114,23 @@ export default function CourseDetail() {
     materialId: current?.id,
     enabled: timed,
     streamUrl: current ? streamUrl(current.id) : "",
-    autoPlayRef: playingRef,
+    autoPlayRef: wantPlayRef,
     overrideUrl: castBurnUrl,
+    sourceChoice: mediaMode === "video" ? sourceChoice : "",
+    askChoice: mediaMode === "video",
   });
+
+  // 换课程时读取该课程记住的播放方式。
+  useEffect(() => {
+    try { setSourceChoice(sessionStorage.getItem(choiceKeyOf(id)) || ""); } catch { setSourceChoice(""); }
+  }, [id]);
+
+  // 选择播放方式：本课程内记住，并清掉上一轮的播放失败提示。
+  const decideSource = (value) => {
+    setSourceChoice(value);
+    setMediaFailed(false);
+    try { sessionStorage.setItem(choiceKeyOf(id), value); } catch {}
+  };
 
   // 换章节时退出烧录流，避免把上一集的转码流套到新章节上。
   useEffect(() => { setCastBurnUrl(""); }, [current?.id]);
@@ -279,6 +300,7 @@ export default function CourseDetail() {
     lastReport.current = 0;
     const nextMode = mediaModeOf(m);
     const isTimed = TIMED_MODES.has(nextMode);
+    wantPlayRef.current = isTimed;
     setCurrentId(m.id);
     setPlaying(isTimed);
     setTime(0);
@@ -306,14 +328,14 @@ export default function CourseDetail() {
     el.volume = volume;
     el.playbackRate = rate;
     el.loop = false;
-    if (stateRef.current.playing) safePlay(el);
+    if (wantPlayRef.current) safePlay(el);
   };
 
   const togglePlay = () => {
     const el = audioRef.current;
     if (!el || !current) return;
-    if (el.paused) { el.play().catch(() => {}); setPlaying(true); }
-    else { el.pause(); setPlaying(false); if (current) report(current.id, el.currentTime, el.duration || 0); }
+    if (el.paused) { wantPlayRef.current = true; el.play().catch(() => {}); setPlaying(true); }
+    else { wantPlayRef.current = false; el.pause(); setPlaying(false); if (current) report(current.id, el.currentTime, el.duration || 0); }
   };
 
   const seek = (value) => {
@@ -344,6 +366,7 @@ export default function CourseDetail() {
     report(current.id, total, total);
 
     if (mode === "loop") {
+      wantPlayRef.current = true;
       if (el) {
         el.currentTime = 0;
         safePlay(el);
@@ -353,8 +376,10 @@ export default function CourseDetail() {
       return;
     }
     if (mode === "sequence" && currentIndex >= 0 && currentIndex < course.materials.length - 1) {
-      next();
+      next(); // selectMaterial 会重新置上播放意图
+      return;
     }
+    wantPlayRef.current = false;
   };
 
   const cycleRate = () => {
@@ -469,7 +494,7 @@ export default function CourseDetail() {
                   x-webkit-airplay="allow"
                   onLoadedMetadata={onLoadedMetadata}
                   onTimeUpdate={(e) => setTime(e.target.currentTime)}
-                  onPlay={() => setPlaying(true)}
+                  onPlay={() => { wantPlayRef.current = true; setPlaying(true); }}
                   onPause={() => setPlaying(false)}
                   onEnded={(e) => handleEnded(e.currentTarget)}
                   onError={onMediaError}
@@ -481,7 +506,11 @@ export default function CourseDetail() {
                 />
                 {playback.preparing && (
                   <div className="media-preparing">
-                    <Spinner /> 正在准备可播版本（{playback.mode === "hls" ? "HLS 分片" : "MP4 重封装"}）…
+                    <Spinner /> {playback.mode === "hls"
+                      ? "正在准备可播版本（HLS 分片）…"
+                      : playback.mode === "remux"
+                        ? "正在准备可播版本（MP4 重封装）…"
+                        : "正在检查播放方式…"}
                   </div>
                 )}
                 {playback.error ? <div className="media-error">{playback.error}</div> : null}
@@ -492,9 +521,28 @@ export default function CourseDetail() {
                     <button type="button" className="cast-burn-exit" onClick={() => setCastBurnUrl("")}>退出</button>
                   </div>
                 ) : null}
+                {playback.needsTranscode && sourceChoice && !castBurnUrl && !mediaFailed && (
+                  <div className="play-source-hint">
+                    <span>{sourceChoice === "raw" ? "原码播放：由播放端解码，不占服务器 CPU" : "服务端转码：兼容性最好，占用服务器 CPU"}</span>
+                    <button
+                      type="button"
+                      className="cast-burn-exit"
+                      onClick={() => decideSource(sourceChoice === "raw" ? "server" : "raw")}
+                    >
+                      {sourceChoice === "raw" ? "改用服务端转码" : "改用原码播放"}
+                    </button>
+                  </div>
+                )}
                 {mediaFailed && !playback.preparing && (
                   <div className="media-error">
-                    <span>浏览器无法直接播放该格式，可下载后用本地播放器打开</span>
+                    <span>
+                      {sourceChoice === "raw"
+                        ? "播放端无法解码该视频的原码，字幕也随之无法显示"
+                        : "浏览器无法直接播放该格式，可下载后用本地播放器打开"}
+                    </span>
+                    {sourceChoice === "raw" && (
+                      <button type="button" className="btn btn-sm" onClick={() => decideSource("server")}>改用服务端转码</button>
+                    )}
                     <a className="btn btn-sm" href={`${streamUrl(current.id)}&download=1`} download><Download size={14} /> 下载后播放</a>
                   </div>
                 )}
@@ -685,7 +733,7 @@ export default function CourseDetail() {
                 x-webkit-airplay="allow"
                 onLoadedMetadata={onLoadedMetadata}
                 onTimeUpdate={(e) => setTime(e.target.currentTime)}
-                onPlay={() => setPlaying(true)}
+                onPlay={() => { wantPlayRef.current = true; setPlaying(true); }}
                 onPause={() => {
                   setPlaying(false);
                   const el = audioRef.current;
@@ -854,6 +902,38 @@ export default function CourseDetail() {
             setConfirmDelete(null);
           } catch (e) { toast(e.message, "error"); }
         }} />
+      )}
+
+      {playback.choose && (
+        <Modal
+          title="选择播放方式"
+          onClose={() => decideSource("server")}
+          wide
+        >
+          <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.7, marginTop: 0 }}>
+            该视频需要服务端处理才能在浏览器里直接播放（
+            {playback.choose.needs_reencode ? "视频编码浏览器不支持" : "容器或音轨浏览器不支持"}
+            ）。请选择播放方式，两种方式都会显示字幕：
+          </p>
+          <div className="source-choice">
+            <button type="button" className="source-option primary" onClick={() => decideSource("server")}>
+              <Server size={19} />
+              <strong>服务端转码</strong>
+              <span>由 NAS 实时转码后播放，兼容性最好；占用服务器 CPU，起播稍慢，拖动进度条时会边转边播。</span>
+            </button>
+            <button type="button" className="source-option" onClick={() => decideSource("raw")}>
+              <MonitorPlay size={19} />
+              <strong>原码播放（播放端解码）</strong>
+              <span>直接播放原始文件，由播放端自行解码，不占服务器 CPU、可秒开拖动；播放设备不支持该编码时无法播放。</span>
+            </button>
+          </div>
+          <p className="muted small" style={{ marginBottom: 0, lineHeight: 1.7 }}>
+            {fmtSize(playback.choose.size)}
+            {playback.choose.video_codec ? ` · ${playback.choose.video_codec}` : ""}
+            {playback.choose.audio_codec ? ` / ${playback.choose.audio_codec}` : ""}
+            {" · "}本课程内会记住你的选择，可随时在播放器上切换。
+          </p>
+        </Modal>
       )}
     </>
   );

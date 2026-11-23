@@ -96,31 +96,7 @@ function seed() {
   run("INSERT INTO discussions (course_id,user_id,content,parent_id,created_at) VALUES (?,?,?,?,?)", 1, 2, "这张歌单太棒了，已经收藏！", null, t);
   run("INSERT INTO discussions (course_id,user_id,content,parent_id,created_at) VALUES (?,?,?,?,?)", 1, 1, "谢谢支持，后续还会继续更新～", 1, t);
 
-  const q1 = [
-    ["single", "《离别开出花》的演唱者是？", ["就是南方凯", "周杰伦", "陈奕迅", "林俊杰"], "0", 20],
-    ["single", "“每一首都可以单曲循环一整天”是哪张歌单的标题？", ["B站2024播放最高的100首歌", "华语经典老歌", "抖音热歌榜", "欧美流行精选"], "0", 20],
-    ["judge", "轻课堂支持为课程添加笔记与讨论。", ["正确", "错误"], "正确", 20],
-    ["multiple", "以下哪些属于轻课堂的功能？", ["课程管理", "在线考试", "一起观影", "视频转码"], "0,1,2,3", 20],
-    ["fill", "轻课堂的英文名是 Lite ____。", [], "Class", 20],
-  ];
-  run("INSERT INTO exams (id,course_id,title,description,duration_minutes,is_published,show_answers,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-    1, null, "轻课堂使用小测验", "检验一下你对轻课堂的了解程度，共 5 题，满分 100 分。", 20, 1, 1, 1, t);
-  q1.forEach((q, i) => run("INSERT INTO exam_questions (exam_id,type,content,options,answer,score,sort_order) VALUES (?,?,?,?,?,?,?)",
-    1, q[0], q[1], JSON.stringify(q[2]), q[3], q[4], i));
-
-  const q2 = [
-    ["single", "在 Python 中，导入 pandas 的正确写法是？", ["import pandas as pd", "include pandas", "using pandas", "require(pandas)"], "0", 25],
-    ["single", "下列哪个方法用于查看 DataFrame 前 5 行？", ["df.head()", "df.first()", "df.top()", "df.show()"], "0", 25],
-    ["judge", "numpy 中的数组要求所有元素类型一致。", ["正确", "错误"], "正确", 25],
-    ["fill", "pandas 中读取 CSV 文件的函数是 pd.____()。", [], "read_csv", 25],
-  ];
-  run("INSERT INTO exams (id,course_id,title,description,duration_minutes,is_published,show_answers,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-    2, 3, "Python 数据分析随堂测", "针对 numpy 与 pandas 基础知识的随堂测试。", 15, 1, 1, 1, t);
-  q2.forEach((q, i) => run("INSERT INTO exam_questions (exam_id,type,content,options,answer,score,sort_order) VALUES (?,?,?,?,?,?,?)",
-    2, q[0], q[1], JSON.stringify(q[2]), q[3], q[4], i));
-
-  run("INSERT INTO rooms (name,code,host_id,course_id,material_id,is_playing,position,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-    "一起听歌 · 华语金曲", "888888", 1, 1, 1, 0, 0, t, t);
+  // 默认不预置考试与放映房间，由管理员按需创建。
 
   const settings = {
     allow_registration: "false", allow_course_creation: "true",

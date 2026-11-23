@@ -40,6 +40,8 @@ export default function WatchParty() {
     enabled: timed,
     streamUrl: current ? streamUrl(current.id) : "",
     autoPlayRef: playingRef,
+    // 一起看要所有人同步，不做「原码 / 服务端转码」询问，直接走服务端转码。
+    askChoice: false,
   });
   const subtitle = useSubtitles({
     materialId: current?.id,

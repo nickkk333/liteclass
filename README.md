@@ -66,16 +66,16 @@ npm run seed:force
 仓库外提供已经打好的原生安装包（x86_64，内置 Linux x64 Node 24 运行时，NAS 上无需另装 Node / Docker）：
 
 ```
-release/liteclass_1.0.14_x86.fpk
+release/liteclass_1.0.15_x86.fpk
 ```
 
 ### 安装
 
-1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.14_x86.fpk`；
+1. 打开 fnOS「应用中心 → 手动安装」，选择 `liteclass_1.0.15_x86.fpk`；
 2. 或在 NAS 上执行：
 
    ```bash
-   appcenter-cli install-fpk liteclass_1.0.14_x86.fpk
+   appcenter-cli install-fpk liteclass_1.0.15_x86.fpk
    ```
 
 3. 安装完成后桌面会出现「轻课堂」图标，也可直接访问 `http://<NAS-IP>:8081`（端口可在应用设置中修改）。
@@ -179,6 +179,7 @@ release/            打包产物（.fpk，已加入 .gitignore）
 
 - fpk 安装包已内置 Linux x64 静态 `ffmpeg` 与 `ffprobe`（位于 `runtime/bin`），无需在 NAS 上另装；也可以用 `LITECLASS_FFMPEG`、`LITECLASS_FFPROBE` 指定其他版本。只有两者都找不到时才会降级为原始流。
 - 打开章节时先请求 `/api/media/status/:id`：浏览器原生可播 → `direct`；有视频且能用关键帧切片 → `hls`（前端按需加载 `hls.js`）；纯音频 / 无 ffprobe → 后台 `remux` 成 MP4，就绪后自动重载；远程来源或设置关闭转码 → `raw`。HLS 分片未就绪返回 `503`，前端每 2 秒重试；播放失败自动 `hls=0` 回退。
+- 需要服务端处理的视频会先问一次「服务端转码 / 原码播放（播放端解码）」：问询用 `/api/media/status/:id?probe=1`，只判定格式、不启动转码任务；选「原码播放」时走 `/api/stream/:id?raw=1` 直连原始文件（跳过 remux 缓存），不占服务器 CPU、可立即拖动，播放端不支持该编码时会在画面内提示一键改用服务端转码。选择按课程记在 `sessionStorage`，播放器右上角可随时切换。两种方式都用 `/api/subtitles/*` 生成的字幕，画在画面里，不受播放方式影响。
 - 缓存按「路径 + 大小 + 修改时间」隔离，源文件变化即失效；HLS 索引与分片、remux MP4 都在 `data/cache`，由 `LITECLASS_CACHE_LIMIT_GB` 控制容量。
 
 ### 系统投屏（AirPlay / Cast / Miracast）
